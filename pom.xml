@@ -16,7 +16,6 @@
     </parent>
 
     <modules>
-        <module>easy-ai-autoconfigure</module>
         <module>easy-ai-starter</module>
     </modules>
 
