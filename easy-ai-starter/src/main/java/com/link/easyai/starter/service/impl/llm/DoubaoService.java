@@ -15,8 +15,17 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 豆包大模型服务实现（旧版）。
+ *
+ * @deprecated 已迁移到插件化 Provider 体系，请使用
+ * {@link com.link.easyai.starter.llm.LLMProviderFactory} 或
+ * {@link com.link.easyai.starter.service.LargeLanguageModelFactory} 获取 Provider。
+ * 内置实现见 {@link com.link.easyai.starter.llm.DoubaoProvider}。
+ */
 @Service
 @Slf4j
+@Deprecated
 public class DoubaoService implements LargeLanguageModel {
 
     @Autowired

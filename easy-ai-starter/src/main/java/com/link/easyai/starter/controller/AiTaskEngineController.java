@@ -1,13 +1,17 @@
 package com.link.easyai.starter.controller;
 
+import com.link.easyai.starter.domain.dto.AutoChatDto;
 import com.link.easyai.starter.domain.dto.ConfigSaveDto;
 import com.link.easyai.starter.domain.dto.EngineChatDto;
 import com.link.easyai.starter.domain.entity.AiTaskConfigRecord;
+import com.link.easyai.starter.domain.vo.AutoChatVo;
 import com.link.easyai.starter.domain.vo.EngineChatVo;
 import com.link.easyai.starter.domain.vo.Response;
+import com.link.easyai.starter.engine.AiChatService;
 import com.link.easyai.starter.engine.AiTaskConfigService;
 import com.link.easyai.starter.engine.AiTaskEngine;
 import com.link.easyai.starter.engine.AiTaskResponse;
+import com.link.easyai.starter.engine.ChatResponse;
 import com.link.easyai.starter.engine.context.TaskContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +27,8 @@ import java.util.Map;
  * <p>
  * Exposes two groups of endpoints:
  * <ol>
- *   <li><b>Chat</b> — POST /easyai/engine/chat — process a user message through the engine</li>
+ *   <li><b>Auto Chat</b> — POST /easyai/engine/chat/auto — 自动意图识别，无需指定 taskType</li>
+ *   <li><b>Chat</b> — POST /easyai/engine/chat — 指定 taskType 直接处理（绕过意图识别）</li>
  *   <li><b>Config management</b> — CRUD for task configs (DRAFT → PUBLISHED → DISABLED)</li>
  * </ol>
  */
@@ -39,7 +44,37 @@ public class AiTaskEngineController {
     @Autowired
     private AiTaskConfigService configService;
 
+    @Autowired
+    private AiChatService aiChatService;
+
     // ---- Chat ----
+
+    /**
+     * 自动意图识别聊天接口。
+     * <p>
+     * 调用方无需指定 taskType，框架会通过 IntentEngine 自动识别用户意图，
+     * 并路由到对应任务执行。支持多轮对话、任务切换、任务取消和会话超时。
+     * <p>
+     * 完整流程：用户消息 → 意图识别(LLM优先+关键词降级) → 任务路由 →
+     * 参数提取/校验/归一化 → 动作执行 → 返回结果。
+     *
+     * @param dto 自动聊天请求（sessionId, message, tenantId）
+     * @return 自动聊天响应（含意图识别结果和任务执行状态）
+     */
+    @PostMapping("/chat/auto")
+    public Response<AutoChatVo> autoChat(@RequestBody AutoChatDto dto) {
+        log.info("[EngineController] autoChat: sessionId={}", dto.getSessionId());
+
+        TaskContext taskContext = TaskContext.builder()
+                .tenantId(dto.getTenantId())
+                .data(new HashMap<>())
+                .build();
+
+        ChatResponse response = aiChatService.chat(
+                dto.getMessage(), dto.getSessionId(), taskContext);
+
+        return Response.success(AutoChatVo.from(response));
+    }
 
     /**
      * Process a single conversation turn.

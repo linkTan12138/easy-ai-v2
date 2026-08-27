@@ -1,0 +1,65 @@
+# ============================================================
+# Easy-AI LLM 插件化配置示例
+# ============================================================
+# 本文件为配置参考，不会被自动加载。
+# 实际使用时将相关配置复制到应用的 application.yml 中。
+# ============================================================
+
+llm:
+  # ---- 默认激活的 provider ----
+  # 内置短名: kimi / deepseek / doubao / openai_compatible
+  # 客户自定义: 完整类名（如 com.customer.llm.MyCustomLLMProvider）
+  # SPI 注册: getName() 返回值（如 my_custom_llm）
+  provider: deepseek
+
+  # ---- 顶层默认配置（单模型场景直接使用） ----
+  api-key: ${LLM_API_KEY:}
+  endpoint: https://api.deepseek.com
+  model: deepseek-chat
+  extra:
+    temperature: 0.7
+    max-tokens: 4096
+
+  # ---- 多 provider 独立配置（fallback 多模型场景） ----
+  # 当 llm.providers.{name} 存在时，该 provider 使用独立配置；
+  # 未配置的字段回退到顶层默认值。
+  providers:
+    kimi:
+      api-key: ${KIMI_API_KEY:}
+      endpoint: https://api.moonshot.cn/v1
+      model: moonshot-v1-8k
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+      endpoint: https://api.deepseek.com
+      model: deepseek-chat
+    doubao:
+      api-key: ${DOUBAO_API_KEY:}
+      endpoint: https://ark.cn-beijing.volces.com/api/v3
+      model: ${DOUBAO_MODEL:}
+    openai_compatible:
+      api-key: ${OPENAI_COMPATIBLE_KEY:sk-xxx}
+      endpoint: http://localhost:11434/v1    # 例如 Ollama
+      model: llama3.1
+      extra:
+        name: my_local_ollama                   # 可选：自定义 provider 名称
+
+# ============================================================
+# 旧版配置（向后兼容，已自动桥接到 llm.providers.*）
+# ============================================================
+# large-language-model:
+#   active: kimi
+#   kimi:
+#     api:
+#       key: ${KIMI_API_KEY:}
+#       url: https://api.moonshot.cn/v1
+#       model: moonshot-v1-8k
+#   deepseek:
+#     api:
+#       key: ${DEEPSEEK_API_KEY:}
+#       url: https://api.deepseek.com
+#       model: deepseek-chat
+#   doubao:
+#     api:
+#       key: ${DOUBAO_API_KEY:}
+#       url: https://ark.cn-beijing.volces.com/api/v3
+#       model: ${DOUBAO_MODEL:}

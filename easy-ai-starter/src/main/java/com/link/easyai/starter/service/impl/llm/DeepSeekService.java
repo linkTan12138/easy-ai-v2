@@ -16,8 +16,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * DeepSeek 大模型服务实现（旧版）。
+ *
+ * @deprecated 已迁移到插件化 Provider 体系，请使用
+ * {@link com.link.easyai.starter.llm.LLMProviderFactory} 或
+ * {@link com.link.easyai.starter.service.LargeLanguageModelFactory} 获取 Provider。
+ * 内置实现见 {@link com.link.easyai.starter.llm.DeepSeekProvider}。
+ */
 @Service
 @Slf4j
+@Deprecated
 public class DeepSeekService implements LargeLanguageModel {
 
     @Autowired
