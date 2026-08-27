@@ -7,41 +7,8 @@ databaseChangeLog:
         onFail: MARK_RAN
         not:
           tableExists:
-            tableName: tb_chat_record
+            tableName: tb_chat_session_task
       changes:
-        - createTable:
-            tableName: tb_chat_record
-            columns:
-              - column:
-                  name: id
-                  type: BIGINT
-                  autoIncrement: true
-                  constraints:
-                    primaryKey: true
-                    nullable: false
-              - column:
-                  name: record
-                  type: TEXT
-              - column:
-                  name: type
-                  type: INT
-              - column:
-                  name: tenant_id
-                  type: BIGINT
-              - column:
-                  name: create_by
-                  type: BIGINT
-              - column:
-                  name: update_by
-                  type: BIGINT
-              - column:
-                  name: create_time
-                  type: DATETIME
-                  defaultValueComputed: CURRENT_TIMESTAMP
-              - column:
-                  name: update_time
-                  type: DATETIME
-                  defaultValueComputed: CURRENT_TIMESTAMP
         - createTable:
             tableName: tb_chat_session_task
             columns:
@@ -69,52 +36,6 @@ databaseChangeLog:
                   type: INT
               - column:
                   name: scenario_code
-                  type: INT
-              - column:
-                  name: tenant_id
-                  type: BIGINT
-              - column:
-                  name: create_by
-                  type: BIGINT
-              - column:
-                  name: update_by
-                  type: BIGINT
-              - column:
-                  name: create_time
-                  type: DATETIME
-                  defaultValueComputed: CURRENT_TIMESTAMP
-              - column:
-                  name: update_time
-                  type: DATETIME
-                  defaultValueComputed: CURRENT_TIMESTAMP
-              - column:
-                  name: deleted
-                  type: TINYINT
-                  defaultValueNumeric: 0
-        - createTable:
-            tableName: tb_task_field_template
-            columns:
-              - column:
-                  name: id
-                  type: BIGINT
-                  autoIncrement: true
-                  constraints:
-                    primaryKey: true
-                    nullable: false
-              - column:
-                  name: template_name
-                  type: VARCHAR(255)
-              - column:
-                  name: description
-                  type: VARCHAR(500)
-              - column:
-                  name: field_list
-                  type: TEXT
-              - column:
-                  name: scenario_code
-                  type: INT
-              - column:
-                  name: enable
                   type: INT
               - column:
                   name: tenant_id

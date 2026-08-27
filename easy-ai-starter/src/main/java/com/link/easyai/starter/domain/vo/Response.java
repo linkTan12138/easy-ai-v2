@@ -1,6 +1,5 @@
 package com.link.easyai.starter.domain.vo;
 
-import com.link.easyai.starter.domain.enums.StatusCodeEnum;
 import lombok.Data;
 
 /**
@@ -10,29 +9,33 @@ import lombok.Data;
  */
 @Data
 public class Response<T> {
-    
+
+    public static final int CODE_SUCCESS = 200;
+    public static final String MSG_SUCCESS = "请求成功";
+    public static final int CODE_FAIL = 400;
+
     private T data;
-    
+
     private Integer code;
-    
+
     private String message;
-    
+
     public Response(T data, Integer code, String message) {
         this.data = data;
         this.code = code;
-        this.message =message;
+        this.message = message;
     }
-    
+
     public Response(T data, Integer code) {
-        this(data,code, StatusCodeEnum.SUCCESS.getMessage());
+        this(data, code, MSG_SUCCESS);
     }
-    
+
     public Response(T data) {
-        this(data, StatusCodeEnum.SUCCESS.getCode(), StatusCodeEnum.SUCCESS.getMessage());
+        this(data, CODE_SUCCESS, MSG_SUCCESS);
     }
 
     public Response() {
-        this(null, StatusCodeEnum.SUCCESS.getCode(), StatusCodeEnum.SUCCESS.getMessage());
+        this(null, CODE_SUCCESS, MSG_SUCCESS);
     }
 
     public static <T> Response<T> success() {
@@ -42,7 +45,7 @@ public class Response<T> {
     public static <T> Response<T> success(T t) {
         return new Response<>(t);
     }
-    
+
     public static <T> Response<T> success(T t, int code) {
         return new Response<>(t, code);
     }
@@ -52,14 +55,14 @@ public class Response<T> {
     }
 
     public static <T> Response<T> fail(String message) {
-        return new Response<>(null, StatusCodeEnum.FAIL.getCode(),message);
+        return new Response<>(null, CODE_FAIL, message);
     }
 
     public static <T> Response<T> fail(T t, String message) {
-        return new Response<>(t,StatusCodeEnum.FAIL.getCode(),message);
+        return new Response<>(t, CODE_FAIL, message);
     }
 
     public static <T> Response<T> fail(T t, Integer code, String message) {
-        return new Response<>(t,code,message);
+        return new Response<>(t, code, message);
     }
 }

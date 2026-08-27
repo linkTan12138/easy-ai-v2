@@ -1,17 +1,13 @@
 package com.link.easyai.starter.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.link.easyai.starter.domain.dto.PageForm;
 import com.link.easyai.starter.domain.entity.TbChatSessionTask;
-import com.link.easyai.starter.domain.vo.TbChatSessionTaskVo;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 @Mapper
 public interface TbChatSessionTaskMapper extends BaseMapper<TbChatSessionTask> {
-    Page<TbChatSessionTaskVo> pageTask(Page<TbChatSessionTaskVo> page, @Param("pageDto") PageForm pageDto);
 
     /**
      * Optimistic lock update: only updates when version matches.

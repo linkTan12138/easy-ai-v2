@@ -18,12 +18,6 @@ public class EasyAiAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AiSceneHolder aiSceneHolder() {
-        return new AiSceneHolder();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
     public LargeLanguageModelHolder largeLanguageModelHolder(
             com.link.easyai.starter.service.LargeLanguageModelFactory largeLanguageModelFactory,
             @Value("${large-language-model.active:kimi}") String active
