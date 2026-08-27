@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EasyAI 框架优化方案 v2.0</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    line-height: 1.75;
+    padding: 40px 20px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 {
+    font-size: 2.2em;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px; text-align: center;
+  }
+  .subtitle { text-align: center; color: #94a3b8; margin-bottom: 48px; font-size: 1.05em; }
+  h2 {
+    font-size: 1.5em; color: #f1f5f9;
+    margin: 56px 0 20px; padding-left: 16px;
+    border-left: 4px solid #60a5fa;
+  }
+  h3 { font-size: 1.15em; color: #cbd5e1; margin: 28px 0 14px; }
+  h4 { font-size: 1.02em; color: #93c5fd; margin: 20px 0 10px; }
+  .card {
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 12px; padding: 28px; margin-bottom: 24px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  }
+  .mermaid {
+    background: #1e293b; border-radius: 12px; padding: 24px;
+    margin-bottom: 24px; border: 1px solid #334155;
+    overflow-x: auto; display: flex; justify-content: center;
+  }
+  .mermaid svg { max-width: 100% !important; height: auto !important; }
+  p { margin-bottom: 14px; color: #cbd5e1; }
+  ul, ol { margin: 12px 0 16px 24px; color: #cbd5e1; }
+  li { margin-bottom: 6px; }
+  code {
+    background: #334155; color: #7dd3fc; padding: 2px 8px;
+    border-radius: 4px; font-size: 0.88em;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  pre {
+    background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+    padding: 16px 20px; margin: 14px 0; overflow-x: auto;
+    font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85em;
+    line-height: 1.6; color: #e2e8f0;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  .tag {
+    display: inline-block; padding: 3px 10px; border-radius: 20px;
+    font-size: 0.78em; font-weight: 600; margin-right: 6px;
+  }
+  .tag-p0 { background: #4a1a1a; color: #f87171; }
+  .tag-p1 { background: #4a2e1a; color: #fb923c; }
+  .tag-p2 { background: #3b3d1a; color: #facc15; }
+  .tag-p3 { background: #1a3d2e; color: #4ade80; }
+  .tag-remove { background: #4a1a1a; color: #f87171; }
+  .tag-add { background: #1a3d2e; color: #4ade80; }
+  .tag-modify { background: #1e3a5f; color: #60a5fa; }
+  table {
+    width: 100%; border-collapse: collapse; margin: 16px 0;
+    font-size: 0.92em;
+  }
+  th, td {
+    border: 1px solid #334155; padding: 10px 14px; text-align: left;
+  }
+  th { background: #1e293b; color: #93c5fd; font-weight: 600; }
+  tr:nth-child(even) { background: #1a2332; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+  @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+  .feature-box {
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 10px; padding: 20px;
+  }
+  .feature-box h4 { margin-top: 0; }
+  .timeline {
+    border-left: 3px solid #334155; padding-left: 24px;
+    margin: 20px 0 20px 12px;
+  }
+  .timeline-item { margin-bottom: 28px; position: relative; }
+  .timeline-item::before {
+    content: ''; position: absolute; left: -31px; top: 6px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #60a5fa; border: 3px solid #0f172a;
+  }
+  .timeline-item h4 { margin-bottom: 6px; color: #f1f5f9; }
+  .footer {
+    text-align: center; color: #64748b; margin-top: 60px;
+    padding-top: 24px; border-top: 1px solid #334155; font-size: 0.9em;
+  }
+  .callout {
+    border-left: 4px solid #f59e0b; background: #1e293b;
+    padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0;
+  }
+  .callout p { margin-bottom: 0; color: #fcd34d; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>EasyAI 框架优化方案 v2.0</h1>
+<p class="subtitle">统一注解驱动 · 新增意图识别 · 管道重构 · 生产级补强</p>
+
+<!-- 优化目标 -->
+<h2>一、优化目标与原则</h2>
+<div class="card">
+  <h4>核心目标</h4>
+  <ol>
+    <li><strong>统一技术栈</strong> — 彻底移除旧版场景处理器体系，全量统一到注解驱动 + 管道式引擎</li>
+    <li><strong>闭环对话体验</strong> — 新增意图识别阶段，用户无需指定 taskType，框架自动识别并路由</li>
+    <li><strong>生产级可靠性</strong> — 解决并发安全、LLM 工程化、可观测性、displayValue 等关键缺陷</li>
+    <li><strong>开发者体验</strong> — 一个注解声明一个任务，一套引擎跑所有场景，减少心智负担</li>
+  </ol>
+  <h4 style="margin-top:20px;">设计原则</h4>
+  <ul>
+    <li><strong>内部表示与用户表示分层</strong> — value 给系统用，displayValue 给用户看，rawValue 留痕</li>
+    <li><strong>每一步都可观测</strong> — 管道每个阶段产出 metrics 和 trace</li>
+    <li><strong>失败可恢复</strong> — LLM 失败重试、降级；状态持久化；并发安全</li>
+    <li><strong>渐进式重构</strong> — 分阶段实施，每阶段可独立交付和验证</li>
+  </ul>
+</div>
+
+<!-- 架构总览 -->
+<h2>二、目标架构总览</h2>
+<p>优化后的对话入口从"调用方指定 taskType"变为"框架自动识别意图"，管道从 9 阶段扩展为 10 阶段（新增意图识别作为第 0 阶段）。</p>
+
+<div class="mermaid">
+flowchart TD
+    USER([用户消息]) --> ENTRY[AiChatService.chat<br/>高层入口]
+    ENTRY --> S0
+
+    subgraph PIPELINE["AI 任务管道（10 阶段）"]
+        direction TB
+        S0["0. 意图识别<br/>IntentEngine<br/>LLM分类 + 关键词匹配"]
+        S1["1. 加载配置<br/>AnnotationConfigService<br/>@AiTask 扫描"]
+        S2["2. 加载/创建任务状态<br/>TaskStateManager<br/>乐观锁 version"]
+        S3["3. 选择待收集字段<br/>FieldSelector + PremiseEngine"]
+        S4["4. LLM 提取<br/>ExtractionEngine<br/>重试 + 降级 + 鲁棒解析"]
+        S5["5. 字段校验<br/>ValidationEngine<br/>填充 displayValue"]
+        S6["6. 归一化<br/>NormalizationEngine"]
+        S7["7. 完成判断<br/>CompletionEngine"]
+        S8["8. 参数映射<br/>MappingEngine"]
+        S9["9. 动作执行<br/>ActionEngine<br/>Action + PostAction"]
+    end
+
+    S0 -->|命中已有任务| S2
+    S0 -->|新意图| S1
+    S0 -->|低置信度| CLARIFY[反问澄清<br/>列出可选任务]
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+    S7 -->|未完成| PENDING[保存状态<br/>返回追问]
+    S7 -->|已完成| S8 --> S9
+    S9 -->|成功| DONE[状态 COMPLETED<br/>返回成功]
+    S9 -->|失败| RETRY[状态 COLLECTING<br/>保留进度]
+
+    CLARIFY --> RESP([返回用户])
+    PENDING --> RESP
+    DONE --> RESP
+    RETRY --> RESP
+
+    style S0 fill:#3b2d5f,stroke:#a78bfa,color:#fff
+    style S4 fill:#4a1a33,stroke:#f472b6,color:#fff
+    style S5 fill:#1e3a5f,stroke:#60a5fa,color:#fff
+    style S9 fill:#1a3d2e,stroke:#4ade80,color:#fff
+    style CLARIFY fill:#4a2e1a,stroke:#fb923c,color:#fff
+</div>
+
+<!-- 第一部分：移除旧版 -->
+<h2>三、移除旧版，统一注解驱动</h2>
+
+<h3>3.1 移除清单</h3>
+<div class="card">
+  <table>
+    <tr><th>类别</th><th>移除项</th><th>替代方案</th></tr>
+    <tr>
+      <td><span class="tag tag-remove">注解</span></td>
+      <td><code>@AiScene</code></td>
+      <td><code>@AiTask</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">基类/接口</span></td>
+      <td><code>AbstractAiSceneProcessor</code>、<code>AiSceneProcessor</code></td>
+      <td><code>ActionExecutor</code> 接口 + <code>@AiAction</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">服务</span></td>
+      <td><code>AiService</code> / <code>AiServiceImpl</code>、<code>TaskTemplateService</code>、<code>TbTaskFieldTemplateServiceImpl</code></td>
+      <td><code>AiChatService</code>（新高层入口）+ <code>AiTaskEngine</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">实体/Mapper</span></td>
+      <td><code>TbTaskFieldTemplate</code>、对应 Mapper/XML</td>
+      <td>注解驱动，无需模板表</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">Controller</span></td>
+      <td><code>TaskTemplateController</code></td>
+      <td>移除（模板管理不再需要）</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">DTO/VO</span></td>
+      <td><code>CollectParamDto</code>、<code>CollectParamVo</code>、<code>CollectParamFieldDto</code>、<code>CollectFieldValidVo</code>、<code>AiSceneProcessorDto</code>、<code>AiChatResponseVo</code></td>
+      <td><code>TaskContext</code>、<code>AiTaskResponse</code></td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">枚举</span></td>
+      <td><code>TaskStatusEnum</code>、<code>ScenarioCodeEnum</code></td>
+      <td><code>TaskStatus</code>（引擎版）</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">配置类</span></td>
+      <td><code>AiSceneHolder</code></td>
+      <td>移除（场景注册由 <code>ActionRegistry</code> 统一管理）</td>
+    </tr>
+    <tr>
+      <td><span class="tag tag-remove">数据库表</span></td>
+      <td><code>tb_task_field_template</code></td>
+      <td>移除，注解替代</td>
+    </tr>
+  </table>
+</div>
+
+<h3>3.2 保留并重构的表</h3>
+<div class="grid-2">
+  <div class="feature-box">
+    <h4>tb_chat_session_task → ai_task_state</h4>
+    <p>重构为专门存储 <code>TaskState</code> 的表，字段对齐 TaskState 结构：</p>
+    <ul>
+      <li><code>task_id</code> (PK)</li>
+      <li><code>task_type</code></li>
+      <li><code>config_version</code></li>
+      <li><code>status</code> (TaskStatus 枚举)</li>
+      <li><code>fields</code> JSON (FieldState 列表)</li>
+      <li><code>context</code> JSON</li>
+      <li><code>version</code> (乐观锁)</li>
+      <li><code>tenant_id</code>、<code>create_time</code>、<code>update_time</code></li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4>tb_chat_record → ai_chat_message</h4>
+    <p>重构为独立的消息行存储（不再塞在一个 text 字段里）：</p>
+    <ul>
+      <li><code>id</code> (PK)</li>
+      <li><code>task_id</code> (关联任务)</li>
+      <li><code>role</code> (user / assistant / system)</li>
+      <li><code>content</code> text</li>
+      <li><code>token_count</code> int (用于预算控制)</li>
+      <li><code>tenant_id</code>、<code>create_time</code></li>
+    </ul>
+  </div>
+</div>
+
+<h3>3.3 统一入口</h3>
+<div class="card">
+  <p>优化后只有<strong>一个对外入口</strong>，调用方无需关心 taskType：</p>
+<pre><code>// 新高层入口 — 自动意图识别 + 任务路由
+public interface AiChatService {
+    ChatResponse chat(String message, String sessionId, TaskContext context);
+}
+
+// 底层引擎 — 保留供高级场景直接调用
+public interface AiTaskEngine {
+    AiTaskResponse execute(String taskType, String taskId,
+                            String userMessage, TaskContext context);
+}</code></pre>
+  <div class="callout">
+    <p><strong>迁移策略：</strong>旧版 <code>AiService.chat()</code> 标记 <code>@Deprecated</code>，内部委托给 <code>AiChatService</code>，一个版本周期后移除。README 和 demo 全部更新为新版用法。</p>
+  </div>
+</div>
+
+<!-- 第二部分：意图识别 -->
+<h2>四、新增：意图识别阶段（第 0 阶段）</h2>
+
+<h3>4.1 设计目标</h3>
+<div class="card">
+  <p>用户说"帮我改一下订单"，框架自动识别为 <code>ORDER_UPDATE</code> 任务，无需调用方预先判断。同时支持：</p>
+  <ul>
+    <li><strong>会话连续性</strong> — 同一 sessionId 下已有进行中的任务，直接继续，不重复识别</li>
+    <li><strong>低置信度澄清</strong> — 识别不确定时，列出可选任务让用户选择</li>
+    <li><strong>任务切换</strong> — 用户明确说"算了，我要查物流"时，能切换到新任务</li>
+    <li><strong>闲聊/兜底</strong> — 无法匹配任何任务时，返回通用回复或转人工</li>
+  </ul>
+</div>
+
+<h3>4.2 意图识别流程</h3>
+<div class="mermaid">
+flowchart TD
+    START([收到消息 + sessionId]) --> CHECK{sessionId 下有<br/>进行中的任务?}
+    CHECK -->|有| SWITCH{用户是否表达<br/>切换意图?}
+    SWITCH -->|否| CONTINUE[继续原有任务<br/>跳过意图识别]
+    SWITCH -->|是| RECOGNIZE
+
+    CHECK -->|无| RECOGNIZE[意图识别]
+
+    subgraph RECOG["意图识别引擎"]
+        direction TB
+        KW[1. 关键词快速匹配<br/>@AiTask.keywords]
+        KW -->|命中高置信| HIT[直接返回 taskType]
+        KW -->|未命中/低置信| LLM[2. LLM 分类<br/>few-shot prompt]
+        LLM --> RESULT[返回 taskType + 置信度]
+    end
+
+    RECOGNIZE --> CONF{置信度 ≥ 阈值?}
+    CONF -->|是| CREATE[创建/加载任务<br/>进入管道阶段 1]
+    CONF -->|否| AMBIG[多候选?]
+    AMBIG -->|是| CLARIFY[反问澄清<br/>"您是想修改订单还是取消订单?"]
+    AMBIG -->|否| FALLBACK[兜底回复<br/>"抱歉我没理解，您可以..."]
+
+    CONTINUE --> PIPE([进入管道])
+    CREATE --> PIPE
+    CLARIFY --> RESP([返回用户])
+    FALLBACK --> RESP
+
+    style RECOG fill:#3b2d5f,stroke:#a78bfa
+    style KW fill:#1e3a5f,stroke:#60a5fa
+    style LLM fill:#4a1a33,stroke:#f472b6
+    style CLARIFY fill:#4a2e1a,stroke:#fb923c
+</div>
+
+<h3>4.3 @AiTask 注解增强</h3>
+<div class="card">
+  <p>为支持意图识别，<code>@AiTask</code> 新增两个字段：</p>
+<pre><code>@AiTask(
+    type = "ORDER_UPDATE",
+    name = "修改订单",
+    description = "通过多轮对话收集修改订单所需字段",
+    action = UpdateOrderAction.class,
+    postActions = {"LOG"},
+
+    // 新增：意图关键词（用于快速匹配和 LLM few-shot 示例）
+    keywords = {"修改订单", "改订单", "更新订单", "订单改一下", "modify order"},
+
+    // 新增：意图示例（用户可能的表达方式，用于 LLM 分类）
+    examples = {
+        "帮我把订单的收货渠道改一下",
+        "订单 US123 的国家要改成美国",
+        "我要修改几个订单的报关方式"
+    }
+)
+public class UpdateOrderDto { ... }</code></pre>
+</div>
+
+<h3>4.4 LLM 意图分类 Prompt 设计</h3>
+<div class="card">
+<pre><code>你是一个客服意图分类器。请根据用户消息判断用户意图。
+
+可用意图列表：
+{% for task in tasks %}
+- {{task.type}}: {{task.name}}
+  描述: {{task.description}}
+  关键词: {{task.keywords | join(", ")}}
+  示例: {{task.examples | join("; ")}}
+{% endfor %}
+
+用户消息: {{userMessage}}
+
+请以 JSON 格式返回:
+{
+  "intent": "最匹配的意图 type，无匹配则为 null",
+  "confidence": 0.0-1.0,
+  "reason": "简短判断理由"
+}</code></pre>
+</div>
+
+<h3>4.5 意图识别结果对象</h3>
+<div class="card">
+<pre><code>public class IntentResult {
+    private String taskType;       // 匹配的任务类型，null 表示无匹配
+    private double confidence;     // 置信度 0.0-1.0
+    private String reason;         // 判断理由（用于 trace）
+    private List<String> candidates; // 低置信度时的候选任务列表
+    private MatchSource source;    // KEYWORD / LLM / FALLBACK
+
+    public boolean isHighConfidence() { return confidence >= 0.75; }
+    public boolean isAmbiguous() { return confidence < 0.75 && candidates.size() > 1; }
+}</code></pre>
+</div>
+
+<!-- P0 优化 -->
+<h2>五、P0 优化（必须先做）</h2>
+
+<h3>5.1 并发安全 — 乐观锁</h3>
+<div class="card">
+  <h4>问题</h4>
+  <p><code>TaskStateManager</code> 的 load-modify-save 不是原子操作，同一 taskId 并发请求会导致状态覆盖。</p>
+  <h4>方案</h4>
+  <ol>
+    <li><code>ai_task_state</code> 表新增 <code>version</code> 字段（<code>FieldState</code> 已有 version，TaskState 也加）</li>
+    <li>更新时 <code>UPDATE ... SET version = version + 1 WHERE task_id = ? AND version = ?</code></li>
+    <li>影响行数为 0 时，说明被并发修改，重新 load 后重试（最多 3 次）</li>
+    <li>重试仍失败，返回"操作过于频繁，请稍后重试"</li>
+  </ol>
+<pre><code>// TaskStateManager.save() 伪代码
+public boolean save(TaskState state) {
+    int currentVersion = state.getVersion();
+    state.setVersion(currentVersion + 1);
+    int rows = mapper.updateWithVersion(state, currentVersion);
+    if (rows == 0) {
+        // 并发冲突，重新加载后合并重试
+        TaskState latest = load(state.getTaskId());
+        mergeState(latest, state);  // 字段级合并，后写的字段优先
+        return saveWithRetry(latest, 2);  // 剩余重试次数
+    }
+    return true;
+}</code></pre>
+</div>
+
+<h3>5.2 LLM 工程化补强</h3>
+<div class="card">
+  <h4>5.2.1 重试机制</h4>
+  <ul>
+    <li>对超时、5xx、429（限流）自动重试，指数退避（1s → 2s → 4s），最多 3 次</li>
+    <li>4xx（除 429）不重试，直接失败</li>
+    <li>重试次数和退避策略可配置</li>
+  </ul>
+  <h4>5.2.2 降级策略</h4>
+  <ul>
+    <li>配置主模型 + 备用模型列表（如主：Kimi，备：Doubao）</li>
+    <li>主模型重试耗尽后自动切换备用模型</li>
+    <li>所有模型都失败时，返回友好提示"AI 服务暂时不可用，请稍后重试"</li>
+  </ul>
+  <h4>5.2.3 解析鲁棒性</h4>
+  <ul>
+    <li>LLM 返回带 markdown 标记（<code>```json ... ```</code>）时，正则提取 JSON 部分</li>
+    <li>JSON 轻微格式错误（尾逗号、单引号、注释）时，用容错解析器修复</li>
+    <li>解析失败时，将原始响应 + 错误信息回传给 LLM，要求"只返回合法 JSON"，重试 1 次</li>
+    <li>仍失败则标记提取失败，返回用户友好提示</li>
+  </ul>
+  <h4>5.2.4 Token 计数与成本</h4>
+  <ul>
+    <li>每次 LLM 调用记录 prompt_tokens / completion_tokens / total_tokens</li>
+    <li>按 taskType / 模型 / 租户维度聚合成本</li>
+    <li>暴露 Metrics：<code>easyai_llm_tokens_total</code>、<code>easyai_llm_cost_total</code></li>
+  </ul>
+</div>
+
+<h3>5.3 displayValue 分层</h3>
+<div class="card">
+  <h4>问题</h4>
+  <p>枚举/业务字段的内部值（1、US、123）直接回显给用户，用户无法理解。</p>
+  <h4>方案</h4>
+  <ol>
+    <li><code>FieldState</code> 新增 <code>displayValue</code> 字段</li>
+    <li><code>ValidationResult</code> 新增 <code>displayValue</code> 参数，校验器匹配成功时填充</li>
+    <li><code>EnumValidator</code> 匹配到 option 后，<code>displayValue = option.getLabel()</code></li>
+    <li>业务校验器（<code>CountryExistValidator</code> 等）查询后，<code>displayValue = 国家名称</code></li>
+    <li><code>DefaultResponseBuilder.formatValue()</code> 优先级：displayValue → rawValue → value</li>
+  </ol>
+<pre><code>// EnumValidator 匹配成功时
+OptionDefinition matched = match(element, options);
+transformed.add(matched.getValue());
+labels.add(matched.getLabel());  // 收集展示值
+
+String displayValue = isList ? String.join("、", labels) : labels.get(0);
+return ValidationResult.success(rawValue, value, displayValue, null);
+
+// ResponseBuilder 回显
+private String formatValue(FieldState fs) {
+    if (fs.getDisplayValue() != null) return fs.getDisplayValue();
+    if (fs.getRawValue() != null) return String.valueOf(fs.getRawValue());
+    if (fs.getValue() != null) return String.valueOf(fs.getValue());
+    return null;
+}</code></pre>
+  <div class="callout">
+    <p><strong>效果：</strong>用户看到"报关方式: 单独报关"而非"1"，"国家: 美国"而非"US"，"收货渠道: DHL特快"而非"123"。</p>
+  </div>
+</div>
+
+<!-- P1 优化 -->
+<h2>六、P1 优化（紧随其后）</h2>
+
+<h3>6.1 结构化日志与 Metrics</h3>
+<div class="card">
+  <h4>结构化日志</h4>
+  <ul>
+    <li>使用 MDC 注入 <code>taskId</code>、<code>taskType</code>、<code>fieldCode</code>、<code>stage</code>、<code>tenantId</code></li>
+    <li>每个管道阶段进入/退出都打印耗时和结果</li>
+    <li>LLM 调用记录 prompt 摘要、响应摘要、耗时、token 数</li>
+    <li>敏感字段（<code>sensitive=true</code>）在日志中自动脱敏为 <code>***</code></li>
+  </ul>
+  <h4>Metrics（Micrometer）</h4>
+  <table>
+    <tr><th>Metric 名</th><th>类型</th><th>说明</th></tr>
+    <tr><td><code>easyai_chat_total</code></td><td>Counter</td><td>对话轮次总数，tag: taskType/result</td></tr>
+    <tr><td><code>easyai_task_duration_seconds</code></td><td>Timer</td><td>任务从创建到完成的总耗时</td></tr>
+    <tr><td><code>easyai_stage_duration_seconds</code></td><td>Timer</td><td>各阶段耗时，tag: stage</td></tr>
+    <tr><td><code>easyai_extraction_success_total</code></td><td>Counter</td><td>LLM 提取成功/失败数</td></tr>
+    <tr><td><code>easyai_validation_fail_total</code></td><td>Counter</td><td>校验失败数，tag: fieldCode/validator</td></tr>
+    <tr><td><code>easyai_field_collect_turns</code></td><td>DistributionSummary</td><td>每个字段平均收集轮次</td></tr>
+    <tr><td><code>easyai_llm_tokens_total</code></td><td>Counter</td><td>LLM token 消耗，tag: model</td></tr>
+    <tr><td><code>easyai_intent_confidence</code></td><td>DistributionSummary</td><td>意图识别置信度分布</td></tr>
+  </table>
+</div>
+
+<h3>6.2 Token 预算与对话历史管理</h3>
+<div class="card">
+  <h4>问题</h4>
+  <p>对话历史一直往 prompt 里塞，多轮后超 LLM 上下文窗口，直接报错。</p>
+  <h4>方案</h4>
+  <ol>
+    <li><strong>预算配置</strong> — 每个任务配置 <code>maxTokens</code>（默认 4096），预留 20% 给 completion</li>
+    <li><strong>历史裁剪</strong> — 构建 prompt 时，从最近消息往前累加，超预算时裁剪最早的消息</li>
+    <li><strong>摘要压缩</strong> — 裁剪前，用 LLM 将被裁剪的历史压缩为一段摘要（"用户之前提供了客户单号 A、B，国家为美国"），放入 system prompt</li>
+    <li><strong>字段状态优先</strong> — TaskState 中已收集的字段值始终保留（体积小、信息密度高），只裁剪原始对话消息</li>
+  </ol>
+<pre><code>// Prompt 构建时的预算控制
+public String buildPrompt(TaskState state, List&lt;ChatMessage&gt; history, int maxTokens) {
+    int reserved = (int)(maxTokens * 0.2);  // 预留 completion
+    int budget = maxTokens - reserved;
+
+    // 1. 始终包含系统提示 + 字段定义 + 当前待收集字段
+    String systemPart = buildSystemPrompt(state);
+    budget -= countTokens(systemPart);
+
+    // 2. 从最近的历史往前加，超预算时裁剪并摘要
+    List&lt;ChatMessage&gt; fitted = new ArrayList&lt;&gt;();
+    for (int i = history.size() - 1; i &gt;= 0; i--) {
+        int tokens = countTokens(history.get(i));
+        if (budget - tokens &lt; 0) {
+            // 裁剪 0..i 的历史，压缩为摘要
+            String summary = summarize(history.subList(0, i + 1));
+            fitted.add(0, new SystemMessage("历史摘要: " + summary));
+            break;
+        }
+        fitted.add(0, history.get(i));
+        budget -= tokens;
+    }
+    return systemPart + serialize(fitted);
+}</code></pre>
+</div>
+
+<!-- P2 优化 -->
+<h2>七、P2 优化（体验与安全）</h2>
+
+<h3>7.1 对话生命周期管理</h3>
+<div class="card">
+  <table>
+    <tr><th>能力</th><th>设计</th></tr>
+    <tr>
+      <td><strong>最大轮次限制</strong></td>
+      <td>每个任务配置 <code>maxTurns</code>（默认 10），超过后返回"已达到最大对话轮次，请重新发起"并标记 FAILED</td>
+    </tr>
+    <tr>
+      <td><strong>任务超时</strong></td>
+      <td>配置 <code>timeoutMinutes</code>（默认 30），超时后状态标记 EXPIRED，用户回来时提示"会话已超时，请重新开始"</td>
+    </tr>
+    <tr>
+      <td><strong>取消意图识别</strong></td>
+      <td>意图识别阶段检测到"算了/不弄了/取消"等表达，主动将任务标记 CANCELLED，返回"好的，已取消"</td>
+    </tr>
+    <tr>
+      <td><strong>恢复引导</strong></td>
+      <td>用户隔一段时间回来继续未完成任务时，首条回复包含"我们上次聊到XX，还需要提供YY"的上下文回顾</td>
+    </tr>
+    <tr>
+      <td><strong>字段修改</strong></td>
+      <td>用户说"把报关方式改成买单报关"时，框架识别为对已收集字段的修改，重置该字段状态为 PENDING 并重新提取校验，其他字段保持不变</td>
+    </tr>
+  </table>
+</div>
+
+<h3>7.2 Prompt 注入防护</h3>
+<div class="card">
+  <ol>
+    <li><strong>角色隔离</strong> — 使用 LLM API 的 messages 结构（system / user / assistant），绝不将用户输入拼入 system prompt</li>
+    <li><strong>输入长度限制</strong> — 用户消息超过 <code>maxInputLength</code>（默认 2000 字符）时截断并提示</li>
+    <li><strong>注入模式检测</strong> — 正则检测"忽略以上指令/ignore previous/system:"等典型注入模式，命中时标记并降级处理（只做参数提取，不执行任何指令类内容）</li>
+    <li><strong>输出白名单</strong> — 提取结果只接受预定义字段，LLM 输出中出现未定义字段时忽略</li>
+  </ol>
+</div>
+
+<!-- P3 优化 -->
+<h2>八、P3 优化（锦上添花）</h2>
+
+<div class="grid-2">
+  <div class="feature-box">
+    <h4>8.1 流式响应（SSE）</h4>
+    <ul>
+      <li><code>AiChatService.chatStream()</code> 返回 <code>Flux&lt;ChatChunk&gt;</code></li>
+      <li>LLM 支持流式输出时，token 级推送给前端</li>
+      <li>提取/校验阶段不流式（需要完整结果），只在最终回复阶段流式</li>
+      <li>前端打字机效果，降低等待焦虑</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4>8.2 配置热更新</h4>
+    <ul>
+      <li>注解配置是静态的（重启生效），新增 DB 配置覆盖层</li>
+      <li><code>ai_task_config_record</code> 表存储 JSON 配置，优先级高于注解</li>
+      <li>运营人员通过管理后台修改配置，发布新版本，新任务自动使用最新版</li>
+      <li>进行中的任务绑定旧版本，不受影响（版本绑定机制已存在）</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 实施路线图 -->
+<h2>九、实施路线图</h2>
+
+<div class="timeline">
+  <div class="timeline-item">
+    <h4>阶段一：基础夯实（P0）— 预计 2 周</h4>
+    <p><span class="tag tag-p0">P0</span> 并发安全（乐观锁）</p>
+    <p><span class="tag tag-p0">P0</span> LLM 重试 + 降级 + 鲁棒解析</p>
+    <p><span class="tag tag-p0">P0</span> displayValue 分层（EnumValidator + 业务校验器 + ResponseBuilder）</p>
+    <p><strong>交付物：</strong>核心管道可靠性达标，用户不再看到数字枚举值</p>
+  </div>
+
+  <div class="timeline-item">
+    <h4>阶段二：架构统一 — 预计 1.5 周</h4>
+    <p><span class="tag tag-remove">移除</span> 旧版全部类（AbstractAiSceneProcessor、@AiScene、AiService、模板表等）</p>
+    <p><span class="tag tag-modify">重构</span> 数据库表（tb_chat_session_task → ai_task_state，tb_chat_record → ai_chat_message）</p>
+    <p><span class="tag tag-add">新增</span> AiChatService 统一入口</p>
+    <p><strong>交付物：</strong>代码库只有一套引擎，demo 和文档全部更新</p>
+  </div>
+
+  <div class="timeline-item">
+    <h4>阶段三：意图识别 — 预计 1.5 周</h4>
+    <p><span class="tag tag-add">新增</span> IntentEngine（关键词匹配 + LLM 分类）</p>
+    <p><span class="tag tag-modify">增强</span> @AiTask 注解（keywords + examples）</p>
+    <p><span class="tag tag-add">新增</span> 低置信度澄清 + 任务切换 + 兜底回复</p>
+    <p><strong>交付物：</strong>用户无需指定 taskType，自动识别意图</p>
+  </div>
+
+  <div class="timeline-item">
+    <h4>阶段四：可观测性（P1）— 预计 1 周</h4>
+    <p><span class="tag tag-p1">P1</span> 结构化日志（MDC + 敏感字段脱敏）</p>
+    <p><span class="tag tag-p1">P1</span> Micrometer Metrics（8 项核心指标）</p>
+    <p><span class="tag tag-p1">P1</span> Token 预算控制 + 历史摘要压缩</p>
+    <p><strong>交付物：</strong>Grafana 看板可监控框架运行状态</p>
+  </div>
+
+  <div class="timeline-item">
+    <h4>阶段五：体验与安全（P2）— 预计 1 周</h4>
+    <p><span class="tag tag-p2">P2</span> 对话生命周期（最大轮次/超时/取消/恢复引导/字段修改）</p>
+    <p><span class="tag tag-p2">P2</span> Prompt 注入防护（角色隔离/长度限制/注入检测/输出白名单）</p>
+    <p><strong>交付物：</strong>对话体验闭环，安全基线达标</p>
+  </div>
+
+  <div class="timeline-item">
+    <h4>阶段六：高级特性（P3）— 预计 1 周</h4>
+    <p><span class="tag tag-p3">P3</span> 流式响应（SSE）</p>
+    <p><span class="tag tag-p3">P3</span> 配置热更新（DB 覆盖层 + 管理后台）</p>
+    <p><strong>交付物：</strong>生产级体验，运营可动态配置</p>
+  </div>
+</div>
+
+<div class="callout">
+  <p><strong>总工期估算：</strong>约 8 周（单人全职），阶段一~三为核心路径，建议优先完成。阶段四~六可并行或按需排期。</p>
+</div>
+
+<!-- 风险 -->
+<h2>十、风险与注意事项</h2>
+<div class="card">
+  <table>
+    <tr><th>风险</th><th>影响</th><th>缓解措施</th></tr>
+    <tr>
+      <td>旧版移除导致现有用户不兼容</td>
+      <td>高</td>
+      <td>旧版标记 @Deprecated 保留一个版本周期，提供迁移文档和工具类</td>
+    </tr>
+    <tr>
+      <td>数据库表重构数据迁移</td>
+      <td>中</td>
+      <td>写 Flyway/Liquibase 迁移脚本，旧表数据映射到新表，灰度验证</td>
+    </tr>
+    <tr>
+      <td>意图识别准确率不足</td>
+      <td>中</td>
+      <td>低置信度走澄清流程，不强行匹配；关键词匹配作为高置信度兜底；持续优化 examples</td>
+    </tr>
+    <tr>
+      <td>LLM 降级切换导致体验不一致</td>
+      <td>低</td>
+      <td>降级时记录日志和 metrics，备用模型 prompt 保持一致；用户无感知</td>
+    </tr>
+    <tr>
+      <td>Token 摘要压缩丢失关键信息</td>
+      <td>中</td>
+      <td>FieldState 始终保留不裁剪；摘要 prompt 强调"保留所有已确认的参数值"；摘要后可校验关键字段是否存在</td>
+    </tr>
+    <tr>
+      <td>乐观锁冲突频繁导致用户体验差</td>
+      <td>低</td>
+      <td>正常用户不会并发发消息；冲突时自动重试 3 次，对用户透明；前端可做发送防抖</td>
+    </tr>
+  </table>
+</div>
+
+<div class="footer">
+  EasyAI 框架优化方案 v2.0 · 基于源码分析生成 · 2026
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1e3a5f',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#60a5fa',
+      lineColor: '#94a3b8',
+      secondaryColor: '#3b2d5f',
+      tertiaryColor: '#1e293b',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis', padding: 20 },
+    er: { useMaxWidth: true },
+    state: { useMaxWidth: true }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EasyAI 框架设计方案分析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    line-height: 1.7;
+    padding: 40px 20px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 {
+    font-size: 2.2em;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .subtitle {
+    text-align: center;
+    color: #94a3b8;
+    margin-bottom: 48px;
+    font-size: 1.05em;
+  }
+  h2 {
+    font-size: 1.5em;
+    color: #f1f5f9;
+    margin: 48px 0 20px;
+    padding-left: 16px;
+    border-left: 4px solid #60a5fa;
+  }
+  h3 {
+    font-size: 1.15em;
+    color: #cbd5e1;
+    margin: 28px 0 14px;
+  }
+  .card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+  }
+  .mermaid {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    border: 1px solid #334155;
+    overflow-x: auto;
+    display: flex;
+    justify-content: center;
+  }
+  .mermaid svg { max-width: 100% !important; height: auto !important; }
+  p { margin-bottom: 14px; color: #cbd5e1; }
+  ul, ol { margin: 12px 0 16px 24px; color: #cbd5e1; }
+  li { margin-bottom: 6px; }
+  code {
+    background: #334155;
+    color: #7dd3fc;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+  .tag {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.8em;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .tag-blue { background: #1e3a5f; color: #60a5fa; }
+  .tag-purple { background: #3b2d5f; color: #a78bfa; }
+  .tag-green { background: #1a3d2e; color: #4ade80; }
+  .tag-orange { background: #4a2e1a; color: #fb923c; }
+  .tag-pink { background: #4a1a33; color: #f472b6; }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+  .feature-box {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .feature-box h4 {
+    color: #60a5fa;
+    margin-bottom: 10px;
+    font-size: 1.05em;
+  }
+  .footer {
+    text-align: center;
+    color: #64748b;
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid #334155;
+    font-size: 0.9em;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>EasyAI 框架设计方案分析</h1>
+<p class="subtitle">基于 Java + Spring Boot 的智能客服框架 · 注解驱动 · 管道式引擎 · 可扩展 SPI</p>
+
+<!-- 1. 项目概述 -->
+<h2>一、项目概述</h2>
+<div class="card">
+  <p><strong>EasyAI</strong> 是一款基于 Java 17 + Spring Boot 3.4 的智能客服框架，以 <code>Spring Boot Starter</code> 方式提供，能够快速集成到任意 Spring Boot 项目中。</p>
+  <p>它专注于企业客服自动化场景，通过 <strong>注解驱动配置</strong> + <strong>动态场景解析</strong> + <strong>智能参数收集</strong> 的方式，让开发者快速构建具备上下文理解能力的智能客服系统。</p>
+  <div style="margin-top:16px;">
+    <span class="tag tag-blue">Spring Boot 3.4</span>
+    <span class="tag tag-purple">Java 17</span>
+    <span class="tag tag-green">MyBatis-Plus</span>
+    <span class="tag tag-orange">多 LLM 支持</span>
+    <span class="tag tag-pink">Starter 自动装配</span>
+  </div>
+</div>
+
+<!-- 2. 模块架构 -->
+<h2>二、模块架构</h2>
+<p>项目采用 Maven 多模块结构，遵循 Spring Boot Starter 的标准拆分模式：</p>
+
+<div class="mermaid">
+graph TB
+    subgraph DEMO["easy-ai-demo · 演示模块"]
+        direction TB
+        D1[UpdateOrderDto<br/>注解配置声明]
+        D2[UpdateOrderAction<br/>业务动作实现]
+        D3[DemoChatController<br/>对话入口]
+        D4[自定义 Validator<br/>ReceiveChannelExistValidator]
+        D5[SPI 实现<br/>Country/Customer/Channel Lookup]
+    end
+
+    subgraph STARTER["easy-ai-starter · 依赖聚合"]
+        S1[pom.xml<br/>仅依赖 autoconfigure]
+    end
+
+    subgraph AUTO["easy-ai-autoconfigure · 核心自动配置"]
+        direction TB
+        subgraph ENGINE["engine · AI 任务引擎核心"]
+            E1[DefaultAiTaskEngine<br/>编排中枢]
+            E2[ExtractionEngine<br/>LLM 提取]
+            E3[ValidationEngine<br/>校验管道]
+            E4[NormalizationEngine<br/>归一化]
+            E5[MappingEngine<br/>参数映射]
+            E6[CompletionEngine<br/>完成判断]
+            E7[ActionEngine<br/>动作执行]
+            E8[PremiseEngine<br/>前置条件]
+            E9[TaskStateManager<br/>状态持久化]
+        end
+        subgraph SVC["service · 业务服务"]
+            S2[AiService<br/>对话服务]
+            S3[LargeLanguageModel<br/>LLM 抽象]
+            S4[AbstractAiSceneProcessor<br/>旧版场景处理器]
+        end
+        subgraph CFG["config · 自动配置"]
+            C1[EasyAiAutoConfiguration]
+            C2[Kimi/DeepSeek/Doubao<br/>模型配置]
+            C3[MybatisPlusConfig]
+        end
+        subgraph ANN["annotation · 注解体系"]
+            A1[@AiTask]
+            A2[@AiField]
+            A3[@AiExtract]
+            A4[@AiValid]
+            A5[@AiMapping]
+            A6[@AiDependsOn]
+        end
+        subgraph SPI["spi · 扩展点接口"]
+            SP1[CustomerLookupService]
+            SP2[CountryLookupService]
+            SP3[ChannelLookupService]
+            SP4[WaybillLookupService]
+        end
+    end
+
+    DEMO -->|依赖| STARTER
+    STARTER -->|依赖| AUTO
+    D1 -.->|扫描| ANN
+    D2 -.->|注册| E7
+    D4 -.->|注册| E3
+    D5 -.->|实现| SPI
+
+    style AUTO fill:#1e3a5f,stroke:#60a5fa,color:#e2e8f0
+    style ENGINE fill:#0f2a1f,stroke:#4ade80,color:#e2e8f0
+    style DEMO fill:#3b2d5f,stroke:#a78bfa,color:#e2e8f0
+    style STARTER fill:#4a2e1a,stroke:#fb923c,color:#e2e8f0
+</div>
+
+<!-- 3. 核心引擎处理流程 -->
+<h2>三、核心引擎：管道式处理流程</h2>
+<p><code>DefaultAiTaskEngine</code> 是框架的编排中枢，将一次对话轮次分解为 9 个有序阶段，每个阶段由独立的子引擎负责，通过 <code>TaskState</code> 在阶段间传递数据。</p>
+
+<div class="mermaid">
+flowchart TD
+    START([用户消息<br/>aiTaskEngine.execute]) --> C1[1. 加载配置<br/>AiTaskConfigService<br/>注解扫描 / DB JSON]
+    C1 --> C2[2. 加载/创建任务状态<br/>TaskStateManager<br/>绑定 configVersion]
+    C2 --> C3[3. 选择待收集字段<br/>FieldSelector + PremiseEngine<br/>前置条件过滤]
+    C3 -->|无待收集字段| CHECK{完成判断<br/>CompletionEngine}
+    C3 -->|有待收集字段| C4[4. LLM 提取<br/>ExtractionEngine<br/>构建 Prompt → 调用 LLM → 解析]
+    C4 -->|提取失败| FAIL1[保存状态<br/>返回错误提示]
+    C4 -->|提取成功| C5[5. 字段校验<br/>ValidationEngine<br/>校验器管道: NotEmpty/Enum/Regex/自定义...]
+    C5 --> C6[6. 归一化<br/>NormalizationEngine<br/>CARGO_DESC 等标准化]
+    C6 --> CHECK
+    CHECK -->|未完成| PENDING[保存状态<br/>ResponseBuilder 构建追问]
+    CHECK -->|已完成| C7[7. 参数映射<br/>MappingEngine<br/>FieldValue → Action 参数]
+    C7 --> C8[8. 执行动作<br/>ActionEngine<br/>ActionExecutor + PostActions]
+    C8 -->|成功| DONE[状态 → COMPLETED<br/>返回成功响应]
+    C8 -->|失败| RETRY[状态 → COLLECTING<br/>返回失败提示, 保留进度]
+
+    PENDING --> END1([返回 needMore 响应])
+    FAIL1 --> END1
+    DONE --> END2([返回 done 响应])
+    RETRY --> END1
+
+    style START fill:#1e3a5f,stroke:#60a5fa
+    style C4 fill:#3b2d5f,stroke:#a78bfa
+    style C5 fill:#4a1a33,stroke:#f472b6
+    style C8 fill:#1a3d2e,stroke:#4ade80
+    style DONE fill:#1a3d2e,stroke:#4ade80
+    style PENDING fill:#4a2e1a,stroke:#fb923c
+</div>
+
+<!-- 4. 任务状态机 -->
+<h2>四、任务状态机</h2>
+<p>每个对话任务（Task）拥有独立的状态生命周期，状态持久化到数据库，支持跨轮次、跨进程恢复：</p>
+
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> INITIALIZED: 创建任务
+    INITIALIZED --> COLLECTING: 首次进入引擎
+    COLLECTING --> COLLECTING: 字段未收集完<br/>继续追问
+    COLLECTING --> READY: 所有必填字段<br/>校验通过
+    READY --> EXECUTING: 触发动作执行
+    EXECUTING --> COMPLETED: 动作成功
+    EXECUTING --> COLLECTING: 动作失败<br/>保留进度重试
+    COLLECTING --> FAILED: 系统异常
+    COLLECTING --> CANCELLED: 用户取消
+    COMPLETED --> [*]
+    FAILED --> [*]
+    CANCELLED --> [*]
+
+    note right of COLLECTING
+      核心状态：大部分时间停留在此
+      每轮对话更新 FieldState
+      敏感字段日志脱敏
+    end note
+</div>
+
+<!-- 5. 注解驱动配置模型 -->
+<h2>五、注解驱动配置模型</h2>
+<p>框架支持 <strong>双轨配置</strong>：注解驱动（开发态）和 DB JSON 配置（运营态）。注解在启动时被 <code>AiAnnotationScanner</code> 扫描并转换为 <code>AiTaskConfig</code>，与 DB 配置走同一套引擎执行。</p>
+
+<div class="mermaid">
+graph LR
+    subgraph ANN["注解声明（DTO 类）"]
+        T[@AiTask<br/>type/name/action/postActions]
+        F[@AiField<br/>name/required/sensitive/normalize]
+        EX[@AiExtract<br/>description/examples/rules]
+        V[@AiValid<br/>by=Validator.class]
+        M[@AiMapping<br/>target/source]
+        DP[@AiDependsOn<br/>前置字段]
+    end
+
+    subgraph BUILD["配置构建器"]
+        B1[AiAnnotationScanner<br/>类路径扫描]
+        B2[AiTaskConfigBuilder<br/>注解 → Config]
+        B3[FieldTypeResolver<br/>Java 类型 → FieldType]
+        B4[EnumResolver<br/>枚举 → Options]
+    end
+
+    subgraph CONFIG["运行时配置对象"]
+        CF[AiTaskConfig<br/>taskType/version/fields]
+        FD[FieldDefinition<br/>code/name/type/extraction/validation...]
+        AC[ActionConfig<br/>type/parameters]
+    end
+
+    T --> B1
+    F --> B1
+    EX --> B1
+    V --> B1
+    M --> B1
+    DP --> B1
+    B1 --> B2
+    B2 --> B3
+    B2 --> B4
+    B2 --> CF
+    CF --> FD
+    CF --> AC
+
+    style ANN fill:#3b2d5f,stroke:#a78bfa
+    style BUILD fill:#1e3a5f,stroke:#60a5fa
+    style CONFIG fill:#0f2a1f,stroke:#4ade80
+</div>
+
+<h3>注解与字段属性映射关系</h3>
+<div class="grid-2">
+  <div class="feature-box">
+    <h4>@AiTask（类级别）</h4>
+    <ul>
+      <li><code>type</code> → 任务类型标识（如 ORDER_UPDATE）</li>
+      <li><code>name</code> → 任务名称</li>
+      <li><code>action</code> → 完成后执行的 Action 类</li>
+      <li><code>postActions</code> → 后置动作列表（如 LOG）</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4>@AiField（字段级别）</h4>
+    <ul>
+      <li><code>name</code> → 字段中文名（追问时使用）</li>
+      <li><code>required</code> → 是否必填</li>
+      <li><code>sensitive</code> → 敏感字段（日志脱敏）</li>
+      <li><code>normalize</code> → 归一化器类型</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4>@AiExtract（提取配置）</h4>
+    <ul>
+      <li><code>description</code> → LLM 提取提示描述</li>
+      <li><code>examples</code> → 提取示例</li>
+      <li><code>rules</code> → 提取规则约束</li>
+    </ul>
+  </div>
+  <div class="feature-box">
+    <h4>@AiValid / @AiMapping / @AiDependsOn</h4>
+    <ul>
+      <li><code>@AiValid</code> → 校验器（可多个，管道执行）</li>
+      <li><code>@AiMapping</code> → 值→动作参数映射（支持 $data）</li>
+      <li><code>@AiDependsOn</code> → 前置字段依赖</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 6. 扩展点 SPI 架构 -->
+<h2>六、扩展点（SPI）架构</h2>
+<p>框架通过多种 SPI 接口实现业务解耦，核心引擎不依赖任何具体业务，所有场景行为由可插拔的实现驱动：</p>
+
+<div class="mermaid">
+graph TB
+    subgraph CORE["框架核心（不可变）"]
+        ENG[DefaultAiTaskEngine]
+    end
+
+    subgraph EXT["可扩展点（业务实现）"]
+        direction TB
+        subgraph VAL["校验器 Validator"]
+            V1[AiValidator / FieldValidator<br/>接口]
+            V2[内置: NotEmpty/Enum/Regex<br/>StringLength/NumberRange/Confirm]
+            V3[内置业务: CustomerExist<br/>CountryExist/ChannelExist]
+            V4[自定义: ReceiveChannelExist]
+        end
+        subgraph ACT["动作 Action"]
+            A1[ActionExecutor 接口<br/>@AiAction 注册]
+            A2[内置: EchoAction]
+            A3[业务: UpdateOrderAction]
+            A4[AiPostAction<br/>后置动作: LoggingPostAction]
+        end
+        subgraph NORM["归一化器 Normalizer"]
+            N1[FieldNormalizer 接口]
+            N2[业务: CargoDescNormalizer]
+        end
+        subgraph LOOK["查询服务 LookupService"]
+            L1[CustomerLookupService]
+            L2[CountryLookupService]
+            L3[ChannelLookupService]
+            L4[WaybillLookupService]
+        end
+        subgraph LLM["大语言模型 LLM"]
+            LL1[LargeLanguageModel 接口]
+            LL2[DeepSeek / Doubao / Kimi]
+        end
+    end
+
+    ENG -->|调用| VAL
+    ENG -->|调用| ACT
+    ENG -->|调用| NORM
+    ENG -->|调用| LOOK
+    ENG -->|调用| LLM
+
+    V1 --> V2
+    V1 --> V3
+    V1 --> V4
+    A1 --> A2
+    A1 --> A3
+    A1 --> A4
+    N1 --> N2
+
+    style CORE fill:#1e3a5f,stroke:#60a5fa
+    style VAL fill:#4a1a33,stroke:#f472b6
+    style ACT fill:#1a3d2e,stroke:#4ade80
+    style NORM fill:#4a2e1a,stroke:#fb923c
+    style LOOK fill:#3b2d5f,stroke:#a78bfa
+    style LLM fill:#0f2a1f,stroke:#22d3ee
+</div>
+
+<!-- 7. 数据模型 -->
+<h2>七、核心数据模型</h2>
+
+<div class="mermaid">
+erDiagram
+    AI_TASK_CONFIG ||--o{ FIELD_DEFINITION : contains
+    AI_TASK_CONFIG ||--|| ACTION_CONFIG : has
+    FIELD_DEFINITION ||--o{ VALIDATION_CONFIG : has
+    FIELD_DEFINITION ||--o{ MAPPING_RULE : has
+    FIELD_DEFINITION ||--o{ OPTION_DEFINITION : has
+    FIELD_DEFINITION ||--o| PREMISE_CONFIG : has
+    FIELD_DEFINITION ||--o| EXTRACTION_CONFIG : has
+    FIELD_DEFINITION ||--o| NORMALIZATION_CONFIG : has
+
+    TASK_STATE ||--o{ FIELD_STATE : tracks
+    TASK_STATE ||--|| TASK_STATUS : has
+
+    AI_TASK_CONFIG {
+        string taskType PK
+        int version
+        string name
+        string description
+    }
+    FIELD_DEFINITION {
+        string code PK
+        string name
+        string type
+        boolean required
+        boolean sensitive
+        int order
+    }
+    TASK_STATE {
+        string taskId PK
+        string taskType
+        int configVersion
+        string status
+        map context
+    }
+    FIELD_STATE {
+        string fieldCode PK
+        string status
+        object value
+        map data
+        string errorMsg
+    }
+
+    style AI_TASK_CONFIG fill:#1e3a5f,stroke:#60a5fa
+    style TASK_STATE fill:#3b2d5f,stroke:#a78bfa
+    style FIELD_DEFINITION fill:#0f2a1f,stroke:#4ade80
+</div>
+
+<!-- 8. 设计亮点总结 -->
+<h2>八、设计亮点总结</h2>
+<div class="grid-2">
+  <div class="feature-box">
+    <h4>1. 管道式架构（Pipeline）</h4>
+    <p>将复杂的对话处理拆解为 9 个独立阶段，每个子引擎职责单一，可独立测试、独立替换。阶段间通过不可变的 <code>TaskState</code> 传递数据，降低耦合。</p>
+  </div>
+  <div class="feature-box">
+    <h4>2. 配置版本绑定</h4>
+    <p>任务创建时绑定特定 <code>configVersion</code>，整个生命周期使用同一版本配置。管理员发布新配置不会影响进行中的任务，避免 mid-task 行为突变。</p>
+  </div>
+  <div class="feature-box">
+    <h4>3. 注解驱动 + 约定优于配置</h4>
+    <p>通过 <code>@AiTask</code> 注解在 DTO 上声明任务配置，字段名/类型/顺序自动推导，开发者只需关注差异部分。启动时扫描转换为标准 Config 对象。</p>
+  </div>
+  <div class="feature-box">
+    <h4>4. 可插拔 SPI 扩展</h4>
+    <p>Validator、Action、Normalizer、LookupService、LLM 全部面向接口编程，业务方按需实现。框架内置通用实现（NotEmpty/Enum/Regex 等），复杂业务自行扩展。</p>
+  </div>
+  <div class="feature-box">
+    <h4>5. 状态持久化与容错</h4>
+    <p>每轮对话结束前持久化 <code>TaskState</code>，JVM 崩溃不丢失进度。异常被顶层捕获，状态标记为 FAILED 并返回友好提示，不会导致调用方对话流程崩溃。</p>
+  </div>
+  <div class="feature-box">
+    <h4>6. 多 LLM 抽象</h4>
+    <p><code>LargeLanguageModel</code> 接口统一抽象，内置 DeepSeek、Doubao、Kimi 三种实现，通过 <code>large-language-model.active</code> 配置切换，新增模型只需实现接口。</p>
+  </div>
+</div>
+
+<div class="footer">
+  EasyAI 框架设计方案分析 · 基于项目源码自动生成 · 2026
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1e3a5f',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#60a5fa',
+      lineColor: '#94a3b8',
+      secondaryColor: '#3b2d5f',
+      tertiaryColor: '#1e293b',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis', padding: 20 },
+    er: { useMaxWidth: true },
+    state: { useMaxWidth: true }
+  });
+</script>
+</body>
+</html>

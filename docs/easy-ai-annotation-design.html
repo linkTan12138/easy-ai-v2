@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EasyAI 注解化改造方案（实施级设计）</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --card: #ffffff; --border: #e2e6ec; --text: #1f2733; --muted: #6b7686;
+    --primary: #2563eb; --primary-bg: #eff4ff; --green: #16a34a; --green-bg: #eefaf2;
+    --amber: #d97706; --amber-bg: #fef6e9; --red: #dc2626; --red-bg: #fef1f1;
+    --purple: #7c3aed; --purple-bg: #f4efff; --teal: #0d9488; --teal-bg: #ecfbf9;
+    --code-bg: #f3f4f6; --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.hero { background: linear-gradient(135deg, #065f46 0%, #0d9488 100%); color: #fff; border-radius: 16px; padding: 40px 44px; margin-bottom: 28px; }
+  header.hero h1 { font-size: 27px; font-weight: 700; margin-bottom: 8px; }
+  header.hero p { opacity: .92; font-size: 15px; max-width: 900px; }
+  header.hero .tags { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  header.hero .tags span { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); padding: 3px 12px; border-radius: 999px; font-size: 12.5px; }
+  h2 { font-size: 21px; margin: 42px 0 16px; padding-left: 12px; border-left: 4px solid var(--teal); }
+  h3 { font-size: 16.5px; margin: 26px 0 10px; }
+  h4 { font-size: 14.5px; margin: 18px 0 8px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 26px; margin-bottom: 18px; }
+  p { margin-bottom: 10px; }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  code, pre { font-family: var(--mono); font-size: 13px; }
+  code { background: var(--code-bg); padding: 1.5px 6px; border-radius: 5px; }
+  pre { background: var(--code-bg); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 12px 0; }
+  pre code { background: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th { background: #f0f2f5; text-align: left; padding: 9px 12px; border: 1px solid var(--border); font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
+  .tag { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-right: 6px; }
+  .tag.blue { background: var(--primary-bg); color: var(--primary); }
+  .tag.green { background: var(--green-bg); color: var(--green); }
+  .tag.amber { background: var(--amber-bg); color: var(--amber); }
+  .tag.red { background: var(--red-bg); color: var(--red); }
+  .tag.purple { background: var(--purple-bg); color: var(--purple); }
+  .tag.teal { background: var(--teal-bg); color: var(--teal); }
+  .note { border-left: 3px solid var(--amber); background: var(--amber-bg); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 13.5px; }
+  .tip { border-left: 3px solid var(--green); background: var(--green-bg); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 13.5px; }
+  .warn { border-left: 3px solid var(--red); background: var(--red-bg); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 13.5px; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin-bottom: 5px; }
+  .fig { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 16px 0; overflow-x: auto; }
+  .fig .fig-title { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 8px; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .flow-row { display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; }
+  .flow-node { background: var(--primary-bg); border: 1.5px solid var(--primary); color: var(--primary); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 600; text-align: center; min-width: 108px; }
+  .flow-arrow { align-self: center; color: #9ca3af; font-size: 18px; font-weight: 700; }
+  .toc { columns: 2; column-gap: 32px; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc li { break-inside: avoid; }
+  .phase { border: 1px solid var(--border); border-radius: 12px; margin: 14px 0; overflow: hidden; }
+  .phase-head { padding: 12px 18px; font-weight: 700; font-size: 15px; background: var(--teal-bg); color: var(--teal); }
+  .phase-body { padding: 14px 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>🧩 EasyAI 注解化改造方案</h1>
+  <p>将「字段提取规则 / 校验规则 / 枚举 / 映射」等配置从数据库 JSON 迁移到实体类注解上；通用校验保留在框架，高定制化校验下沉为「客户自实现校验类」，由注解以 Class 参数引用。方案覆盖设计原则、注解集、运行时机制、迁移路径与实施计划，可直达实施层面。</p>
+  <div class="tags">
+    <span>注解驱动</span><span>声明式配置</span><span>校验下沉</span><span>引擎零改动</span><span>双模兼容</span>
+  </div>
+</header>
+
+<div class="card">
+  <h3>📑 目录</h3>
+  <ol class="toc">
+    <li><a href="#goals">目标与设计原则</a></li>
+    <li><a href="#overview">方案总览</a></li>
+    <li><a href="#annotations">注解集设计</a></li>
+    <li><a href="#custom-valid">自定义校验体系</a></li>
+    <li><a href="#runtime">运行时机制（扫描 → 注册 → 引擎）</a></li>
+    <li><a href="#builtin">框架内置通用校验清单</a></li>
+    <li><a href="#business-valid">框架业务校验器去留</a></li>
+    <li><a href="#compat">兼容与灰度策略</a></li>
+    <li><a href="#migration">迁移路径（DB → 注解）</a></li>
+    <li><a href="#plan">实施计划</a></li>
+    <li><a href="#risk">风险与对策</a></li>
+  </ol>
+</div>
+
+<h2 id="goals">1. 目标与设计原则</h2>
+<div class="card">
+  <h3>1.1 改造目标</h3>
+  <ol>
+    <li><strong>声明内聚</strong>：字段的提取规则（说明 / 示例 / 规则）、校验规则、枚举、映射全部以注解形式标注在实体类字段上，与业务代码同源、同库、同版本。</li>
+    <li><strong>编译期可查</strong>：注解参数（正则、长度、枚举、校验类引用）由编译器校验，杜绝 DB JSON 手写导致的脏配置与运行时才发现的问题。</li>
+    <li><strong>校验职责分层</strong>：
+      <ul>
+        <li><span class="tag green">框架层</span>只保留与业务无关的<strong>通用校验</strong>：非空、正则、长度、数值区间、枚举映射、确认语义。</li>
+        <li><span class="tag amber">客户层</span>承载<strong>高定制化校验</strong>（存在性、权限、跨字段、依赖外部系统等）：客户实现一个校验类，注解用 <code>Class</code> 参数引用，即插即用。</li>
+      </ul>
+    </li>
+    <li><strong>引擎零改动</strong>：复用现有 <code>AiTaskEngine</code> 全部流水线能力，仅新增一个配置源实现（注解 → <code>AiTaskConfig</code> 的适配器）。</li>
+    <li><strong>平滑过渡</strong>：注解模式与数据库模式并存，通过 <code>easy-ai.task-engine.config-source</code> 切换，可灰度、可回退。</li>
+  </ol>
+
+  <h3>1.2 设计原则</h3>
+  <ul>
+    <li><strong>配置模型不变</strong>：引擎内部仍然消费 <code>AiTaskConfig / FieldDefinition / ValidationConfig ...</code> 模型，注解只是"新的声明语法"，不引入第二套引擎。</li>
+    <li><strong>默认值对齐</strong>：注解缺省值 = 现有配置模型缺省值（如 <code>required=false</code>、<code>allowEmpty=false</code>、<code>onFail=RETRY</code>），保证行为一致。</li>
+    <li><strong>通用优先，定制后置</strong>：同一字段允许多个校验注解，执行顺序 = 声明顺序（通用在前、定制在后），定制校验失败也走现有 <code>RETRY/BLOCK</code> 语义。</li>
+    <li><strong>最小侵入</strong>：不要求客户改引擎、不要求改现有内置校验器接口；新增的注解包独立成 <code>domain.annotation</code> 子包。</li>
+    <li><strong>失败要快</strong>：启动期扫描即做配置自检（重复字段代码、校验类不存在、非法正则等），配置错误直接阻断启动而非运行期才发现。</li>
+  </ul>
+</div>
+
+<h2 id="overview">2. 方案总览</h2>
+<div class="card">
+  <div class="fig">
+    <div class="fig-title">双模配置架构：注解模式与数据库模式并存，引擎共用</div>
+    <svg viewBox="0 0 1060 520" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+      <defs>
+        <marker id="arr2" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 Z" fill="#8b95a5"/></marker>
+        <filter id="sh2" x="-4%" y="-4%" width="108%" height="112%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1f2733" flood-opacity="0.08"/></filter>
+      </defs>
+
+      <!-- 客户侧 -->
+      <text x="48" y="30" font-size="14" font-weight="700" fill="#1f2733">客户接入侧（业务工程）</text>
+      <rect x="48" y="42" width="300" height="120" rx="10" fill="#eefaf2" stroke="#4ade80" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="64" y="66" font-size="12.5" font-weight="700" fill="#15803d">★ 实体类（注解化 DTO）</text>
+      <text x="64" y="86" font-size="11" fill="#374151">@AiTask("ORDER_UPDATE")</text>
+      <text x="64" y="102" font-size="11" fill="#374151">public class UpdateOrderDto {</text>
+      <text x="78" y="118" font-size="11" fill="#374151">@AiExtract(...) @AiValid(by=XxxValidator.class)</text>
+      <text x="78" y="134" font-size="11" fill="#374151">private String customerNo;</text>
+      <text x="64" y="150" font-size="11" fill="#374151">}</text>
+      <rect x="388" y="42" width="240" height="120" rx="10" fill="#fef6e9" stroke="#fcd34d" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="404" y="66" font-size="12.5" font-weight="700" fill="#b45309">★ 客户自定义校验类</text>
+      <text x="404" y="88" font-size="11" fill="#374151">XxxValidator implements</text>
+      <text x="404" y="104" font-size="11" fill="#374151">  FieldValidator（或子接口）</text>
+      <text x="404" y="122" font-size="11" fill="#374151">校验类由 @AiValid 以 Class 引用</text>
+      <text x="404" y="140" font-size="11" fill="#6b7280">可注入 Spring Bean / 查库 / 调外部系统</text>
+      <rect x="668" y="42" width="340" height="120" rx="10" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="684" y="66" font-size="12.5" font-weight="700" fill="#374151">（可选）保留数据库配置</text>
+      <text x="684" y="88" font-size="11" fill="#6b7280">ai_task_config 表 JSON</text>
+      <text x="684" y="106" font-size="11" fill="#6b7280">适用于：运营/产品需动态改配置的场景</text>
+      <text x="684" y="124" font-size="11" fill="#6b7280">或存量业务未迁移完成阶段</text>
+
+      <!-- 框架侧 -->
+      <text x="48" y="196" font-size="14" font-weight="700" fill="#1f2733">框架侧（easy-ai-autoconfigure）</text>
+      <rect x="48" y="208" width="300" height="120" rx="10" fill="#eff4ff" stroke="#60a5fa" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="64" y="232" font-size="12.5" font-weight="700" fill="#1d4ed8">★ 新增：注解元数据模型</text>
+      <text x="64" y="252" font-size="11" fill="#374151">AiTaskMeta / FieldMeta / ValidMeta</text>
+      <text x="64" y="270" font-size="11" fill="#374151">（注解 → FieldDefinition 的中间表示）</text>
+      <rect x="388" y="208" width="240" height="120" rx="10" fill="#eff4ff" stroke="#60a5fa" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="404" y="232" font-size="12.5" font-weight="700" fill="#1d4ed8">★ 新增：注解扫描器</text>
+      <text x="404" y="252" font-size="11" fill="#374151">AnnotationConfigScanner</text>
+      <text x="404" y="270" font-size="11" fill="#374151">启动时扫描 @AiTask 类</text>
+      <text x="404" y="288" font-size="11" fill="#374151">构建 AiTaskConfig 并自检</text>
+      <rect x="668" y="208" width="340" height="120" rx="10" fill="#eff4ff" stroke="#60a5fa" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="684" y="232" font-size="12.5" font-weight="700" fill="#1d4ed8">★ 新增：AnnotationConfigService</text>
+      <text x="684" y="252" font-size="11" fill="#374151">implements AiTaskConfigService</text>
+      <text x="684" y="270" font-size="11" fill="#374151">get() / getLatestPublished() / 版本管理</text>
+      <text x="684" y="288" font-size="11" fill="#374151">taskType → 注解类映射</text>
+
+      <!-- 引擎 -->
+      <rect x="48" y="360" width="960" height="120" rx="12" fill="#ffffff" stroke="#86efac" stroke-width="1.5" filter="url(#sh2)"/>
+      <text x="66" y="386" font-size="14" font-weight="700" fill="#15803d">现有引擎（零改动复用）</text>
+      <text x="66" y="408" font-size="11.5" fill="#374151">DefaultAiTaskEngine 编排：FieldSelector → ExtractionEngine → ValidationEngine → NormalizationEngine → CompletionEngine → MappingEngine → ActionEngine</text>
+      <text x="66" y="428" font-size="11.5" fill="#374151">校验执行：ValidatorRegistry.get(type) 按序执行管道 —— 通用注解映射到内置校验器 type；定制注解映射到客户校验类 type</text>
+      <text x="66" y="448" font-size="11.5" fill="#374151">状态机 / 任务持久化 / 容错降级 / 响应构建 —— 全部沿用</text>
+      <rect x="668" y="362" width="320" height="50" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+      <text x="684" y="382" font-size="12" font-weight="600" fill="#15803d">ValidatorRegistry（注册表）</text>
+      <text x="684" y="400" font-size="11" fill="#6b7280">内置通用 + 客户自定义校验器统一注册</text>
+
+      <!-- arrows -->
+      <line x1="348" y1="102" x2="382" y2="102" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr2)"/>
+      <line x1="348" y1="262" x2="382" y2="262" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr2)"/>
+      <line x1="628" y1="262" x2="662" y2="262" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr2)"/>
+      <line x1="528" y1="328" x2="528" y2="354" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr2)"/>
+      <line x1="838" y1="328" x2="838" y2="356" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr2)"/>
+      <line x1="488" y1="102" x2="662" y2="102" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arr2)"/>
+      <text x="520" y="92" font-size="10.5" fill="#6b7280">@AiValid 引用校验类</text>
+    </svg>
+  </div>
+
+  <div class="tip"><strong>一句话概括</strong>：新增「注解扫描 → 元数据模型 → <code>AiTaskConfig</code>」的适配链路，把它作为 <code>AiTaskConfigService</code> 的第二个实现接入；校验器侧统一走现有 <code>ValidatorRegistry</code>，通用校验由注解参数直接生成，定制校验由注解的 <code>Class</code> 参数解析为校验器实例并注册。</div>
+</div>
+
+<h2 id="annotations">3. 注解集设计</h2>
+<div class="card">
+
+  <h3>3.1 注解总览</h3>
+  <table>
+    <tr><th>注解</th><th>作用域</th><th>作用</th><th>对应配置模型</th></tr>
+    <tr><td><code>@AiTask</code></td><td>类</td><td>声明一个任务场景（taskType / name / description / action / completion）</td><td>AiTaskConfig</td></tr>
+    <tr><td><code>@AiField</code></td><td>字段</td><td>字段基础元信息（code / name / type / required / order / sensitive）</td><td>FieldDefinition</td></tr>
+    <tr><td><code>@AiExtract</code></td><td>字段</td><td>提取规则：说明 / 示例 / 规则 / 允许为空</td><td>ExtractionConfig</td></tr>
+    <tr><td><code>@AiPremise</code></td><td>字段</td><td>前置条件（单条件或条件组）</td><td>PremiseConfig</td></tr>
+    <tr><td><code>@AiOptions</code></td><td>字段</td><td>枚举选项（label ↔ value）</td><td>OptionDefinition[]</td></tr>
+    <tr><td><code>@AiNotBlank</code> <code>@AiRegex</code> <code>@AiLength</code> <code>@AiRange</code> <code>@AiEnum</code> <code>@AiConfirm</code></td><td>字段</td><td>通用校验（框架内置）</td><td>ValidatorDefinition[]</td></tr>
+    <tr><td><code>@AiValid</code>（可重复）</td><td>字段</td><td>定制校验：以 <code>Class</code> 引用客户校验类，可带参数</td><td>ValidatorDefinition[]</td></tr>
+    <tr><td><code>@AiNormalize</code></td><td>字段</td><td>标准化：以 <code>Class</code> 或 type 引用标准化器</td><td>NormalizationConfig</td></tr>
+    <tr><td><code>@AiMapping</code>（可重复）</td><td>字段</td><td>映射规则（target + source 表达式）</td><td>MappingRule[]</td></tr>
+  </table>
+
+  <h3>3.2 类级注解 <code>@AiTask</code></h3>
+  <div class="fig">
+    <div class="fig-title">@AiTask 属性与默认值（对应 AiTaskConfig）</div>
+    <pre><code>@Target(TYPE) @Retention(RUNTIME)
+public @interface AiTask {
+    String taskType();                // 任务类型，如 "ORDER_UPDATE"（必填，唯一）
+    String name() default "";         // 场景名称，缺省取类名
+    String description() default "";  // 场景描述（用于意图匹配提示）
+    String actionType() default "";   // 主动作类型，如 "UPDATE_ORDER"
+    String[] postActions() default {};// 后置动作类型，如 {"LOG"}
+    int version() default 1;          // 配置版本（注解模式默认 1）
+    // completion 聚合：required / optional 直接取自字段注解，无需重复声明；
+    // 若需额外控制，可加：String[] requiredFields() default {}; String[] optionalFields() default {};
+}</code></pre>
+  </div>
+
+  <h3>3.3 字段级基础注解 <code>@AiField</code></h3>
+  <div class="fig">
+    <div class="fig-title">@AiField 属性（对应 FieldDefinition 基础字段）</div>
+    <pre><code>@Target(FIELD) @Retention(RUNTIME)
+public @interface AiField {
+    String code() default "";        // 字段代码，缺省取 Java 字段名（驼峰原样）
+    String name() default "";        // 中文名称，缺省取字段名
+    FieldType type() default STRING; // 框架字段类型；缺省由 Java 类型自动推断：
+                                     //   String→STRING, Integer→INTEGER, Long→LONG,
+                                     //   BigDecimal→DECIMAL, Boolean→BOOLEAN,
+                                     //   List&lt;String&gt;→STRING_LIST, List&lt;Integer&gt;→INTEGER_LIST ...
+    boolean required() default false;
+    int order() default Integer.MAX_VALUE;  // 收集顺序
+    boolean sensitive() default false;      // 敏感字段（脱敏）
+}</code></pre>
+    <div class="tip">type 自动推断规则由 <code>TypeInferrer</code> 组件负责，支持 <code>@AiField(type = ...)</code> 手动覆盖。类型推断是注解模式优于 DB JSON 的体验点之一——少写一个字段。</div>
+  </div>
+
+  <h3>3.4 提取规则注解 <code>@AiExtract</code>（对应 ExtractionConfig）</h3>
+  <div class="fig">
+    <div class="fig-title">@AiExtract 属性（说明 / 示例 / 规则 直接进 Prompt）</div>
+    <pre><code>@Target(FIELD) @Retention(RUNTIME)
+public @interface AiExtract {
+    String description() default "";   // 字段含义说明（Prompt）
+    String[] examples() default {};    // 示例值（Prompt），如 {"美国","加拿大"}
+    String[] rules() default {};       // 提取规则（Prompt），如 {"返回字符串数组"}
+    boolean allowEmpty() default false;
+    // 进阶（可选 v1.1）：Class&lt;? extends ExtractStrategy&gt; strategy() default DefaultExtractStrategy.class;
+}</code></pre>
+  </div>
+
+  <h3>3.5 前置条件 / 枚举 / 标准化 / 映射注解</h3>
+  <div class="fig">
+    <div class="fig-title">@AiPremise / @AiOptions / @AiNormalize / @AiMapping 设计</div>
+    <pre><code>@Target(FIELD) @Retention(RUNTIME)
+public @interface AiPremise {
+    String field();                 // 依赖的字段代码
+    String op() default "exists";   // exists | notExists | eq | neq | in
+    String value() default "";      // eq/neq 时的期望值
+    String[] values() default {};   // in 时的期望值集合
+    // 复杂条件树（AND/OR）可重复使用 @AiPremises({@AiPremise...}) + operator
+}
+
+@Target(FIELD) @Retention(RUNTIME)
+public @interface AiOptions {
+    AiOption[] value();
+}
+public @interface AiOption { String label(); String value(); }  // value 以字符串承载，扫描时按字段类型转换
+
+@Target(FIELD) @Retention(RUNTIME)
+public @interface AiNormalize {
+    Class&lt;? extends FieldNormalizer&gt; by() default DefaultNormalizer.class; // 客户标准化器
+    String type() default "";   // 或按现有 type 引用（兼容存量）
+    String[] params() default {};  // k=v 形式的参数
+}
+
+@Target(FIELD) @Retention(RUNTIME) @Repeatable(AiMappings.class)
+public @interface AiMapping {
+    String target();            // 目标参数路径，如 "receiveChannelId"
+    String source() default "$value";  // $value / $rawValue / $data.xxx / 字面量
+}</code></pre>
+    <div class="note">映射规则是<strong>可选</strong>的：未标注 <code>@AiMapping</code> 的字段，扫描器生成默认映射 <code>target = 字段代码, source = $value</code>，与 demo 中大多数字段的写法一致。</div>
+  </div>
+
+  <h3>3.6 使用示例（改造后的实体类形态）</h3>
+  <div class="fig">
+    <div class="fig-title">UpdateOrderDto 注解化示意（含提取规则、通用校验、定制校验）</div>
+    <pre><code>@AiTask(taskType = "ORDER_UPDATE", name = "修改订单",
+        description = "收集修改订单所需字段，确认后执行修改",
+        actionType = "UPDATE_ORDER", postActions = {"LOG"})
+public class UpdateOrderDto {
+
+    @AiField(name = "客户单号", type = STRING_LIST, required = true, order = 1)
+    @AiExtract(description = "需要修改订单的客户单号，只提取涉及修改的单号",
+               examples = {"test1123,JT1241241,5323112-"},
+               rules = {"返回字符串数组，元素间用逗号分隔", "忽略不涉及修改订单的单号"})
+    @AiNotBlank(message = "客户单号不能为空")
+    @AiValid(by = CustomerExistValidator.class)            // ★ 定制校验：客户自实现
+    private List&lt;String&gt; customerNos;
+
+    @AiField(name = "收货渠道", order = 2)
+    @AiExtract(description = "渠道名称一般以始发地、承运商、专线目的国等要素组合，常以“价”结尾",
+               examples = {"U009-HKUPS红单5000价", "D011-香港DHL特快5000"},
+               allowEmpty = true)
+    @AiValid(by = ChannelExistValidator.class, params = {"channelType=receive"})
+    @AiMapping(target = "receiveChannelId", source = "$data.id")
+    @AiMapping(target = "receiveChannelName", source = "$value")
+    private String receiveChannelName;
+
+    @AiField(name = "报关方式", type = INTEGER, order = 5)
+    @AiOptions({@AiOption(label = "其他", value = "0"),
+                @AiOption(label = "单独报关", value = "1"),
+                @AiOption(label = "买单报关", value = "3")})
+    @AiEnum()                                              // 通用校验：label→value 映射
+    private Integer declareType;
+
+    @AiField(name = "确认信息", required = true, order = 8)
+    @AiPremise(field = "customerNos", op = "exists")
+    @AiOptions({@AiOption(label = "确认", value = "1"), @AiOption(label = "其他", value = "0")})
+    @AiConfirm(confirmValue = "1")                         // 通用校验：确认语义 + confirmed 标志
+    @AiMapping(target = "confirmed", source = "$data.confirmed")
+    private String isConfirm;
+}</code></pre>
+  </div>
+  <div class="tip"><strong>对照可见</strong>：原来 200+ 行的 DB JSON（ORDER_UPDATE 配置）压缩为几十行实体类注解，且字段声明、提取规则、校验、枚举、映射全部内聚在同一个字段上。客户新增一个定制校验 = 写一个校验类 + 加一行 <code>@AiValid(by = Xxx.class)</code>，不再需要动数据库。</div>
+</div>
+
+<h2 id="custom-valid">4. 自定义校验体系</h2>
+<div class="card">
+
+  <h3>4.1 校验类形态（客户视角）</h3>
+  <p>为降低客户心智负担，在现有 <code>FieldValidator</code>（type + params 风格，面向配置驱动）之上，提供更贴近注解语义的<strong>子接口</strong>，两者并存：</p>
+  <div class="fig">
+    <div class="fig-title">自定义校验接口（新，注解友好）与现有 FieldValidator 的关系</div>
+    <pre><code>// 方案 A（推荐）：注解专用接口 —— 参数为强类型注解信息 + 上下文
+public interface AnnotationValidator extends FieldValidator {
+    // type() 由框架根据 Class 自动生成（如类简单名），无需手写
+    // validate() 中可直接通过 FieldContext 拿：tenantId / userDetails / 其他字段值 / 配置参数
+}
+
+// 方案 B（兼容存量）：直接实现现有 FieldValidator + @AiValidator("TYPE")
+// 适合已有校验器平滑迁移，@AiValid 提供 type 属性引用：
+//   @AiValid(type = "CUSTOMER_EXIST")
+
+// 校验器实例化规则（优先级从高到低）：
+// ① 从 Spring 容器按 Class 取 Bean（校验类标注 @Component 时，可注入 Mapper/Service）
+// ② 容器中无此 Bean → 框架反射实例化（无参构造），每次调用复用单例（缓存于 Map&lt;Class, FieldValidator&gt;）
+// ③ 实例化失败 → 启动自检阶段直接报错，阻断启动（快速失败）</code></pre>
+  </div>
+
+  <h3>4.2 <code>@AiValid</code> 注解设计（核心诉求）</h3>
+  <div class="fig">
+    <div class="fig-title">@AiValid —— 以 Class 为参数引用客户校验类，可重复，可带参数</div>
+    <pre><code>@Target(FIELD) @Retention(RUNTIME) @Repeatable(AiValids.class)
+public @interface AiValid {
+    Class&lt;? extends FieldValidator&gt; by();   // ★ 客户自定义校验类（必填）
+    String[] params() default {};           // 参数，k=v 形式，如 {"channelType=receive"}
+    String message() default "";            // 失败提示语（可选，覆盖校验类默认文案）
+    String onFail() default "RETRY";        // 失败策略：RETRY 追问 | BLOCK 终止任务
+    int order() default Integer.MAX_VALUE;  // 管道内顺序（默认按声明顺序）
+}</code></pre>
+    <div class="note"><strong>为什么用 Class 而不是 type 字符串</strong>：①编译期即可校验类是否存在、是否实现正确接口；②IDE 可跳转、可重构；③类即文档，客户的校验逻辑和声明在同一个仓库；④框架侧自动用 <code>Class.getName()</code>（或简单名）作为 ValidatorRegistry 的 type 键，无需人工命名冲突。</div>
+  </div>
+
+  <h3>4.3 校验上下文与能力边界（客户校验类能做什么）</h3>
+  <table>
+    <tr><th>能力</th><th>获取方式</th><th>典型用途</th></tr>
+    <tr><td>当前字段值与定义</td><td><code>FieldContext.fieldCode / fieldDefinition</code></td><td>读取字段元信息（如 options）</td></tr>
+    <tr><td>租户 / 登录人</td><td><code>FieldContext.taskContext.get("tenantId" / "userDetails")</code></td><td>租户隔离、数据权限</td></tr>
+    <tr><td>其他字段已收集值</td><td><code>FieldContext.fieldStates</code>（Map&lt;code, FieldState&gt;）</td><td>跨字段校验（如 A 依赖 B 的取值）</td></tr>
+    <tr><td>业务数据查询</td><td>校验类声明 <code>@Component</code>，注入 Mapper/Service</td><td>存在性、唯一性、权限、状态机校验</td></tr>
+    <tr><td>外部系统 / RPC</td><td>同上，注入 Feign/HTTP 客户端</td><td>风控、库存、黑名单等</td></tr>
+    <tr><td>附加数据回传</td><td><code>ValidationResult.success(raw, value, data)</code></td><td>校验通过时带回 id/名称等，供 @AiMapping 使用</td></tr>
+    <tr><td>值转换</td><td>返回 <code>ValidationResult.success(..., value)</code> 管道接力</td><td>标准化、格式统一（下流继续校验）</td></tr>
+  </table>
+  <div class="tip"><strong>职责边界</strong>：客户校验类只做"判定 + 附加数据"，不做对话编排、不做状态修改；失败消息由框架按 <code>RETRY/BLOCK</code> 语义自动转换为追问文案。这与现有 <code>validField()</code> 的返回约定（<code>CollectFieldValidVo</code>）语义对齐，但声明位置从处理器 Java 代码 / DB JSON 移到字段注解。</div>
+
+  <h3>4.4 校验管道执行语义</h3>
+  <div class="fig">
+    <div class="fig-title">字段校验管道（通用注解在前 → 定制校验在后，失败即短路）</div>
+    <pre><code>以 customerNos 字段为例，注解声明顺序即执行顺序：
+  @AiNotBlank(message="客户单号不能为空")          → NOT_EMPTY 内置校验器
+  @AiValid(by = CustomerExistValidator.class)     → 客户校验类（注册为 type=CustomerExistValidator）
+
+rawValue ──▶ NOT_EMPTY ──▶ CustomerExistValidator ──▶ 标准值 + data{customerNo...}
+                │                   │
+                └─ 失败：INVALID + 追问文案；通过则进入下一个
+
+规则：
+· 同一字段多个校验按 @Order / 声明顺序执行；前一个的 value/data 输出作为后一个输入（管道）。
+· 任一失败 → FieldState=INVALID，记 errorCode/errorMessage，遵循 onFail（默认 RETRY）。
+· 通用校验注解与 @AiValid 可混合排列（通用放前面通常更合理，避免无谓的昂贵定制校验）。</code></pre>
+  </div>
+</div>
+
+<h2 id="runtime">5. 运行时机制（扫描 → 注册 → 引擎）</h2>
+<div class="card">
+
+  <h3>5.1 启动期组件</h3>
+  <table>
+    <tr><th>组件</th><th>职责</th><th>实现要点</th></tr>
+    <tr><td><code>AnnotationConfigScanner</code></td><td>扫描 <code>@AiTask</code> 注解类，读取全部字段注解，构建元数据模型</td><td>复用 Spring <code>ClassPathScanningCandidateComponentProvider</code> 或 <code>ApplicationContext.getBeansWithAnnotation(AiTask.class)</code>；支持配置扫描包路径</td></tr>
+    <tr><td><code>AnnotationMetaModel</code></td><td>注解 → <code>AiTaskConfig</code> 的中间表示（AiTaskMeta / FieldMeta / ValidMeta / ExtractMeta / OptionMeta / MappingMeta）</td><td>与引擎配置模型解耦，便于后续支持更多注解/校验器演进</td></tr>
+    <tr><td><code>AnnotationConfigBuilder</code></td><td>元数据模型 → 完整 <code>AiTaskConfig</code>（含类型推断、默认映射、默认 completion 聚合）</td><td>唯一"翻译器"，产出结果与 DB JSON 解析结果结构一致</td></tr>
+    <tr><td><code>AnnotationConfigValidator</code></td><td>启动自检：taskType 重复、字段 code 重复、校验类不存在/未实现接口、非法正则、params 键值格式、options 值类型转换失败等</td><td>任何一项不过 → 抛 <code>ConfigValidationException</code> 阻断启动</td></tr>
+    <tr><td><code>AnnotationValidatorRegistrar</code></td><td>遍历所有 <code>@AiValid</code> 引用的 Class，实例化/取 Bean，按 Class 名注册进现有 <code>ValidatorRegistry</code></td><td>与现有 <code>ValidatorRegistrar</code> 并存；同一 Class 去重注册</td></tr>
+    <tr><td><code>AnnotationAiTaskConfigService</code></td><td>实现 <code>AiTaskConfigService</code>：<code>get()</code> / <code>getLatestPublished()</code> / 版本 / 生命周期方法</td><td>注解模式版本固定（<code>@AiTask.version</code>），生命周期方法（saveDraft/publish/disable）抛 UnsupportedOperation 或仅支持 list/get</td></tr>
+  </table>
+
+  <h3>5.2 装配开关与优先级</h3>
+  <div class="fig">
+    <div class="fig-title">application.yml 配置（复用现有 AiTaskProperties，新增 config-source 取值）</div>
+    <pre><code>easy-ai:
+  task-engine:
+    enabled: true
+    config-source: annotation   # ★ database（默认/现状）| annotation（新） | json（预留）
+    scan-packages: com.your.biz.dto   # 注解模式必填：@AiTask 实体所在包（可逗号分隔多个）
+    # 优先级说明：同一 taskType 不允许双源共存（启动自检拦截）；
+    # 迁移期可先全部切换 annotation，或按 taskType 前缀分流（见第 8 节灰度）</code></pre>
+  </div>
+
+  <h3>5.3 运行时行为对齐</h3>
+  <ul>
+    <li><strong>版本语义</strong>：注解模式下 <code>version</code> 取自 <code>@AiTask.version</code>（默认 1）。任务绑定版本逻辑不变；若需"配置热更新"，注解模式依赖发布新代码（符合"代码即配置"的定位），动态场景仍可用数据库模式。</li>
+    <li><strong>缓存</strong>：注解配置在启动期构建一次放入不可变缓存（ConcurrentHashMap），运行期零 IO，天然不可变。</li>
+    <li><strong>敏感字段脱敏</strong>：<code>@AiField(sensitive=true)</code> 映射到 FieldDefinition.sensitive，沿用现有会话记录脱敏逻辑。</li>
+    <li><strong>完成判定</strong>：required/optional 由 <code>@AiField(required=true)</code> 聚合生成 <code>CompletionConfig</code>，行为与现状一致（required 字段全 VALID + 无 INVALID 即完成）。</li>
+    <li><strong>意图匹配（旧链路）</strong>：注解模式的场景描述同样可提供给旧链路 <code>matchScenario</code>（如需并存，由适配层把注解配置同步进 <code>TbTaskFieldTemplate</code> 的镜像表或直接改造 matchScenario 读取 config 源）。</li>
+  </ul>
+</div>
+
+<h2 id="builtin">6. 框架内置通用校验清单</h2>
+<div class="card">
+  <p>框架只保留与具体业务无关的通用校验，以注解形式直接声明在字段上：</p>
+  <table>
+    <tr><th>注解</th><th>属性</th><th>映射内置校验器</th><th>说明</th></tr>
+    <tr><td><code>@AiNotBlank</code></td><td>message</td><td>NOT_EMPTY</td><td>非空（空串/空集合视为缺失）</td></tr>
+    <tr><td><code>@AiRegex</code></td><td>pattern, message</td><td>REGEX</td><td>正则匹配，支持集合逐元素校验</td></tr>
+    <tr><td><code>@AiLength</code></td><td>min, max, message</td><td>STRING_LENGTH</td><td>长度区间（含边界）</td></tr>
+    <tr><td><code>@AiRange</code></td><td>min, max, message</td><td>NUMBER_RANGE</td><td>数值区间</td></tr>
+    <tr><td><code>@AiEnum</code></td><td>message</td><td>ENUM</td><td>配合 <code>@AiOptions</code> 做 label→value 映射</td></tr>
+    <tr><td><code>@AiConfirm</code></td><td>confirmValue, message</td><td>CONFIRM</td><td>确认语义，data.confirmed 供映射</td></tr>
+  </table>
+  <div class="tip"><strong>取舍原则</strong>：是否进入框架内置，看它是否"零业务假设"。正则、长度、区间、非空、枚举、确认都是纯格式/语义层校验；凡是需要"查某个表/调某个服务/判断某个业务状态"的，一律走 <code>@AiValid(by = 客户类)</code>。</div>
+</div>
+
+<h2 id="business-valid">7. 框架业务校验器去留</h2>
+<div class="card">
+  <table>
+    <tr><th>现状（框架内置）</th><th>处置</th><th>去向</th></tr>
+    <tr><td>NOT_EMPTY / REGEX / STRING_LENGTH / NUMBER_RANGE / ENUM / CONFIRM</td><td><span class="tag green">保留</span></td><td>框架内置通用校验器（不动）</td></tr>
+    <tr><td>CUSTOMER_EXIST / CUSTOMER_PERMISSION</td><td><span class="tag amber">下沉迁移</span></td><td>移入 easy-ai-demo（示例客户实现），框架侧标记 <code>@Deprecated</code> 保留一版兼容期后删除；客户业务侧自行实现同名逻辑并通过 <code>@AiValid(by = ...)</code> 引用</td></tr>
+    <tr><td>CHANNEL_EXIST / COUNTRY_EXIST / WAYBILL_EDITABLE</td><td><span class="tag amber">下沉迁移</span></td><td>同上；SPI 接口（CustomerLookupService 等）保留在框架作为"可选能力"，但不再内置默认业务校验器</td></tr>
+    <tr><td>BusinessValidatorSupport / ValueUtils</td><td><span class="tag blue">保留</span></td><td>作为校验工具基类/工具类留在框架（与业务无关）</td></tr>
+  </table>
+  <div class="note"><strong>兼容策略</strong>：v1 版本内置业务校验器仅标记 <code>@Deprecated</code> 并继续工作（存量 DB 配置仍可解析）；v2 移除。同时发布迁移小工具/文档，将存量配置中的 <code>{"type":"CUSTOMER_EXIST"}</code> 一键改写为 <code>@AiValid(by=CustomerExistValidator.class)</code> 形态。</div>
+</div>
+
+<h2 id="compat">8. 兼容与灰度策略</h2>
+<div class="card">
+  <h3>8.1 三种 config-source 并存</h3>
+  <table>
+    <tr><th>模式</th><th>适用场景</th><th>配置管理方式</th></tr>
+    <tr><td><code>database</code>（默认）</td><td>存量部署、运营需动态调整配置</td><td>现有 /easyai/engine/config/* 管理接口 + 版本化</td></tr>
+    <tr><td><code>annotation</code>（新增）</td><td>研发主导、配置与代码同源的业务</td><td>改实体类注解 → 发版</td></tr>
+    <tr><td><code>json</code>（预留）</td><td>轻量部署、不想用数据库</td><td>classpath:ai-task-configs/*.json</td></tr>
+  </table>
+
+  <h3>8.2 灰度路径（推荐）</h3>
+  <ol>
+    <li><strong>影子期</strong>：新业务直接用 <code>annotation</code> 模式新建 taskType；存量 taskType 仍走 <code>database</code>。启动自检保证同一 taskType 不双源。</li>
+    <li><strong>迁移期</strong>：对存量 taskType，用「配置导出 → 实体类骨架生成」工具生成注解实体，人工核对提取规则/校验/枚举后，切换 <code>config-source</code>（可按 taskType 白名单分流，如 <code>annotation-task-types: ORDER_UPDATE</code>）。</li>
+    <li><strong>回退</strong>：切换后任何问题，将 taskType 从白名单移除即回退到数据库模式，在途任务不受影响（绑定版本逻辑不变）。</li>
+    <li><strong>收敛期</strong>：全部迁移完成后移除 database 支持（可选），删表保留迁移脚本。</li>
+  </ol>
+
+  <h3>8.3 注解模式下 <code>AiTaskConfigService</code> 接口的处理</h3>
+  <ul>
+    <li><code>get / getLatestPublished / getLatestVersion / list</code>：完整支持（基于启动期构建的内存注册表）。</li>
+    <li><code>saveDraft / publish / disable</code>：注解模式抛 <code>UnsupportedOperationException</code>（配置随代码走，不由运行时管理）；管理端 Controller 在该模式下自动隐藏配置 CRUD 入口。</li>
+  </ul>
+</div>
+
+<h2 id="migration">9. 迁移路径（DB → 注解）</h2>
+<div class="card">
+  <h3>9.1 手工迁移步骤（单场景）</h3>
+  <ol>
+    <li>新建（或改造）场景 DTO：类上加 <code>@AiTask</code>，字段加 <code>@AiField/@AiExtract/.../@AiValid</code>，内容逐项对照原 DB JSON 的 <code>FieldDefinition</code>。</li>
+    <li>业务定制校验器：把框架内置业务校验器（或旧 <code>validField</code> switch 分支）改写为客户校验类，字段上 <code>@AiValid(by = ...)</code> 引用。</li>
+    <li>配置 <code>config-source: annotation</code> + <code>scan-packages</code>，启动验证（自检通过 + 控制台打印各 taskType 已注册配置）。</li>
+    <li>用「对话冒烟用例」回归：每条字段的提取 → 校验（含失败分支）→ 映射 → 动作。</li>
+    <li>切换分流 → 观察 → 确认后纳入白名单。</li>
+  </ol>
+
+  <h3>9.2 可提供的配套工具（建议）</h3>
+  <ul>
+    <li><strong>配置导出器</strong>：读 <code>ai_task_config</code> 指定 taskType 的 JSON → 生成注解实体类骨架（含提取规则/枚举/映射，定制校验生成 TODO 占位类）。</li>
+    <li><strong>配置对比器</strong>：注解模式构建的 <code>AiTaskConfig</code> 与数据库最新 PUBLISHED 配置做字段级 diff，保障迁移零差异。</li>
+    <li><strong>文档生成器</strong>：注解扫描结果 → Markdown 配置手册（每个 taskType 的字段、校验、Prompt 片段），供产品/运营查阅。</li>
+  </ul>
+</div>
+
+<h2 id="plan">10. 实施计划</h2>
+<div class="card">
+
+  <div class="phase">
+    <div class="phase-head">Phase 1 · 注解定义与元数据模型（约 3~5 人日）</div>
+    <div class="phase-body">
+      <ul>
+        <li>新增 <code>domain.annotation</code> 包：<code>@AiTask / @AiField / @AiExtract / @AiPremise / @AiOptions / @AiNotBlank / @AiRegex / @AiLength / @AiRange / @AiEnum / @AiConfirm / @AiValid / @AiNormalize / @AiMapping</code> 及可重复容器注解。</li>
+        <li>新增元数据模型 <code>engine.annotation.*</code>（AiTaskMeta / FieldMeta / ValidMeta / ExtractMeta / OptionMeta / MappingMeta / PremiseMeta）。</li>
+        <li>新增 <code>TypeInferrer</code>：Java 类型 → FieldType 推断。</li>
+        <li><strong>验收</strong>：注解可被反射完整读取；类型推断正确；可重复注解容器工作正常。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head">Phase 2 · 扫描器 + 配置构建 + 自检（约 4~6 人日）</div>
+    <div class="phase-body">
+      <ul>
+        <li>实现 <code>AnnotationConfigScanner</code>（扫描路径配置化）、<code>AnnotationConfigBuilder</code>（元数据 → <code>AiTaskConfig</code>，含默认映射/completion 聚合）、<code>AnnotationConfigValidator</code>（启动自检，快速失败）。</li>
+        <li>实现 <code>AnnotationValidatorRegistrar</code>：<code>@AiValid</code> 引用类 → 实例化/取 Bean → 注册进 <code>ValidatorRegistry</code>（以类名注册 type，保证与配置模型引用一致）。</li>
+        <li><strong>验收</strong>：对 demo 的 ORDER_UPDATE 编写注解版 DTO，构建出的 <code>AiTaskConfig</code> 与 DB JSON 版本逐字段 diff 一致；非法注解（重复 code / 坏校验类）能阻断启动并给出明确报错。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head">Phase 3 · AnnotationAiTaskConfigService + 装配开关（约 2~3 人日）</div>
+    <div class="phase-body">
+      <ul>
+        <li>实现 <code>AnnotationAiTaskConfigService implements AiTaskConfigService</code>；<code>AiTaskProperties</code> 增加 <code>config-source=annotation</code>、<code>scan-packages</code>、<code>annotation-task-types</code> 白名单；按配置条件装配对应 ConfigService（<code>@ConditionalOnProperty</code>）。</li>
+        <li>管理端 Controller 在注解模式下隐藏配置 CRUD。</li>
+        <li><strong>验收</strong>：<code>AiTaskEngineController /chat</code> 用注解配置跑通完整"提取→校验→映射→动作"链路；任务绑定版本、状态持久化、失败重试与 DB 模式行为一致。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head">Phase 4 · 业务校验器下沉 + 兼容处理（约 2~3 人日）</div>
+    <div class="phase-body">
+      <ul>
+        <li>CUSTOMER_EXIST / CHANNEL_EXIST / COUNTRY_EXIST / CUSTOMER_PERMISSION / WAYBILL_EDITABLE 标记 <code>@Deprecated</code>；demo 中改写为注解版客户校验类示例（保留 SPI 用法演示）。</li>
+        <li>输出迁移文档（存量 DB 配置 → 注解实体对照表）。</li>
+        <li><strong>验收</strong>：框架 starter 不再包含任何业务专属校验逻辑；demo 通过 <code>@AiValid(by=...)</code> 实现同等能力。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head">Phase 5 · 工具 + 演示 + 文档（约 3~4 人日）</div>
+    <div class="phase-body">
+      <ul>
+        <li>配置导出器（DB JSON → 注解实体骨架）、配置对比器（注解 vs DB diff）。</li>
+        <li>更新 README：注解模式使用文档 + 完整示例；<code>easy-ai-demo</code> 增加注解版场景。</li>
+        <li>补充单元/集成测试：注解构建、类型推断、校验器注册、自检失败场景、双模共存。</li>
+        <li><strong>验收</strong>：新接入方仅凭文档 + demo 即可完成注解模式接入。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="tip" style="margin-top:14px;">总投入约 <strong>14~21 人日</strong>，其中 Phase 1–3 为 MVP（可跑通注解模式端到端），Phase 4–5 为完善与推广。引擎核心（DefaultAiTaskEngine 及各子引擎）全程零改动。</div>
+</div>
+
+<h2 id="risk">11. 风险与对策</h2>
+<div class="card">
+  <table>
+    <tr><th>风险</th><th>影响</th><th>对策</th></tr>
+    <tr><td>注解模式失去"运行时改配置"能力</td><td>运营侧动态调整受限</td><td>双模并存：动态调整场景保留 database；注解模式面向研发主导场景；必要时提供「注解 → DB 配置同步器」</td></tr>
+    <tr><td>存量业务量大，迁移成本高</td><td>推广受阻</td><td>提供导出器/对比器；白名单灰度；迁移期双模共存可随时回退</td></tr>
+    <tr><td>校验类注入 Spring 依赖失败（客户忘记加 @Component）</td><td>运行期 NPE / 校验不生效</td><td>启动自检：扫描时即校验 Class 可实例化；取 Bean 失败自动回退反射实例化并打印告警；文档明确最佳实践</td></tr>
+    <tr><td>注解膨胀，字段注解过多影响可读性</td><td>实体类变重</td><td>注解语义化拆分（职责单一）；必要时支持「元注解组合」（客户自定义复合注解）；示例文档提供最佳排版</td></tr>
+    <tr><td>同一 taskType 双源误配</td><td>行为不确定</td><td>启动自检强制互斥；白名单显式声明</td></tr>
+    <tr><td>框架内置业务校验器删除影响存量用户</td><td>升级破坏兼容</td><td>先 Deprecated 保留一版 → 下版本移除；发布迁移脚本与文档</td></tr>
+  </table>
+</div>
+
+<div class="card" style="background:var(--teal-bg);border-color:#99f6e4;">
+  <h3 style="color:var(--teal);margin-top:0;">🎯 方案要点回顾</h3>
+  <ol>
+    <li><strong>配置声明注解化</strong>：提取规则（<code>@AiExtract</code>）、枚举（<code>@AiOptions</code>）、通用校验（<code>@AiRegex/@AiLength/...</code>）、定制校验（<code>@AiValid(by = 客户类)</code>）、映射（<code>@AiMapping</code>）全部落在实体字段上，与代码同源。</li>
+    <li><strong>校验职责分层</strong>：框架只留通用校验（非空/正则/长度/区间/枚举/确认）；一切业务化校验由客户自实现校验类承载，注解以 <code>Class</code> 参数引用，编译期可查、即插即用。</li>
+    <li><strong>引擎零改动</strong>：新增 <code>AnnotationAiTaskConfigService</code> 作为配置源第二实现，复用现有提取/校验/标准化/映射/动作/状态机全链路。</li>
+    <li><strong>平滑落地</strong>：<code>config-source</code> 三模切换 + taskType 白名单灰度 + 导出/对比工具 + 快速失败自检，迁移可回退、可度量。</li>
+  </ol>
+</div>
+
+<div class="muted" style="text-align:center;margin-top:36px;">EasyAI 注解化改造方案 · 配套文档：《easy-ai-architecture.html》现有架构分析</div>
+
+</div>
+</body>
+</html>

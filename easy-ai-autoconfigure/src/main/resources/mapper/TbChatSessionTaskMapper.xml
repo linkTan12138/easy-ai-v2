@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.link.easyai.starter.mapper.TbChatSessionTaskMapper">
+
+
+    <select id="pageTask" resultType="com.link.easyai.starter.domain.vo.TbChatSessionTaskVo">
+        select
+            task.*
+        from
+            tb_chat_session_task task
+        order by
+            task.update_time desc
+    </select>
+
+    <update id="updateWithVersion">
+        UPDATE tb_chat_session_task
+        SET
+            type = #{entity.type},
+            field_list = #{entity.fieldList},
+            records = #{entity.records},
+            extra_content = #{entity.extraContent},
+            status = #{entity.status},
+            scenario_code = #{entity.scenarioCode},
+            task_type = #{entity.taskType},
+            config_version = #{entity.configVersion},
+            ai_task_state = #{entity.aiTaskState},
+            tenant_id = #{entity.tenantId},
+            version = version + 1,
+            update_time = NOW()
+        WHERE id = #{entity.id}
+          AND version = #{expectedVersion}
+    </update>
+</mapper>

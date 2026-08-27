@@ -1,0 +1,2 @@
+com.link.easyai.starter.config.EasyAiAutoConfiguration
+com.link.easyai.starter.engine.AiTaskAutoConfiguration

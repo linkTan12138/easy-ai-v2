@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EasyAI 框架架构分析</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --card: #ffffff; --border: #e2e6ec; --text: #1f2733; --muted: #6b7686;
+    --primary: #2563eb; --primary-bg: #eff4ff; --green: #16a34a; --green-bg: #eefaf2;
+    --amber: #d97706; --amber-bg: #fef6e9; --red: #dc2626; --red-bg: #fef1f1;
+    --purple: #7c3aed; --purple-bg: #f4efff; --teal: #0d9488; --teal-bg: #ecfbf9;
+    --code-bg: #f3f4f6; --mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.hero { background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: #fff; border-radius: 16px; padding: 40px 44px; margin-bottom: 28px; }
+  header.hero h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  header.hero p { opacity: .9; font-size: 15px; max-width: 860px; }
+  header.hero .tags { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  header.hero .tags span { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); padding: 3px 12px; border-radius: 999px; font-size: 12.5px; }
+  h2 { font-size: 21px; margin: 40px 0 16px; padding-left: 12px; border-left: 4px solid var(--primary); }
+  h3 { font-size: 16.5px; margin: 24px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 26px; margin-bottom: 18px; }
+  p { margin-bottom: 10px; color: var(--text); }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  code, pre { font-family: var(--mono); font-size: 13px; }
+  code { background: var(--code-bg); padding: 1.5px 6px; border-radius: 5px; }
+  pre { background: var(--code-bg); border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 12px 0; }
+  pre code { background: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th { background: #f0f2f5; text-align: left; padding: 9px 12px; border: 1px solid var(--border); font-weight: 600; }
+  td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; }
+  .tag { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-right: 6px; }
+  .tag.blue { background: var(--primary-bg); color: var(--primary); }
+  .tag.green { background: var(--green-bg); color: var(--green); }
+  .tag.amber { background: var(--amber-bg); color: var(--amber); }
+  .tag.red { background: var(--red-bg); color: var(--red); }
+  .tag.purple { background: var(--purple-bg); color: var(--purple); }
+  .tag.teal { background: var(--teal-bg); color: var(--teal); }
+  .note { border-left: 3px solid var(--amber); background: var(--amber-bg); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 13.5px; }
+  .tip { border-left: 3px solid var(--green); background: var(--green-bg); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 13.5px; }
+  .warn { border-left: 3px solid var(--red); background: var(--red-bg); border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 12px 0; font-size: 13.5px; }
+  ul, ol { padding-left: 22px; margin: 8px 0; }
+  li { margin-bottom: 5px; }
+  .fig { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 16px 0; overflow-x: auto; }
+  .fig .fig-title { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 8px; font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .flow-row { display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; }
+  .flow-node { background: var(--primary-bg); border: 1.5px solid var(--primary); color: var(--primary); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 600; text-align: center; min-width: 108px; }
+  .flow-node.gray { background: #f3f4f6; border-color: #9ca3af; color: #374151; }
+  .flow-node.green { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+  .flow-arrow { align-self: center; color: #9ca3af; font-size: 18px; font-weight: 700; }
+  .toc { columns: 2; column-gap: 32px; }
+  .toc a { color: var(--primary); text-decoration: none; }
+  .toc li { break-inside: avoid; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>🚀 EasyAI 框架架构分析</h1>
+  <p>基于 Java 17 + Spring Boot 3.x 的智能客服 Starter：图形化场景配置 → 动态意图识别 → LLM 参数抽取 → 多轮对话补全 → 驱动后端业务动作。本报告梳理其整体架构、模块划分、核心流水线与扩展机制。</p>
+  <div class="tags">
+    <span>Spring Boot Starter</span><span>Java 17</span><span>MyBatis-Plus</span><span>LLM 抽取引擎</span><span>DB 配置驱动</span>
+  </div>
+</header>
+
+<div class="card">
+  <h3>📑 目录</h3>
+  <ol class="toc">
+    <li><a href="#overview">项目概览与技术栈</a></li>
+    <li><a href="#module">模块划分与职责</a></li>
+    <li><a href="#layers">分层架构图</a></li>
+    <li><a href="#pipeline">任务引擎核心流水线</a></li>
+    <li><a href="#config-model">配置模型（数据库 JSON）</a></li>
+    <li><a href="#validation">校验体系现状与问题</a></li>
+    <li><a href="#extension">扩展点汇总</a></li>
+    <li><a href="#summary">架构结论</a></li>
+  </ol>
+</div>
+
+<h2 id="overview">1. 项目概览与技术栈</h2>
+<div class="card">
+  <p><strong>定位</strong>：企业客服自动化框架，以「智能入口」的形式接入对话，自动完成<strong>意图识别 → 场景匹配 → 参数收集 → 校验确认 → 业务动作执行</strong>的完整闭环。</p>
+  <p><strong>两条并存链路</strong>：</p>
+  <ul>
+    <li><span class="tag blue">旧链路</span><strong>场景模板链路</strong>（<code>AiServiceImpl</code> + <code>AbstractAiSceneProcessor</code>）：配置存于 <code>tb_task_field_template</code> 表，字段收集逻辑在场景实现类中，校验通过 <code>validField()</code> 硬编码。</li>
+    <li><span class="tag green">新链路</span><strong>任务引擎链路</strong>（<code>AiTaskEngine</code> + <code>AiTaskConfigService</code>）：配置以 JSON 存于 <code>ai_task_config</code> 表，具备版本化（DRAFT → PUBLISHED → DISABLED）与任务绑定版本机制，是当前的主干演进方向。</li>
+  </ul>
+  <table>
+    <tr><th>维度</th><th>技术选型</th></tr>
+    <tr><td>语言 / 框架</td><td>Java 17，Spring Boot 3.4.x，以 Starter（<code>easy-ai-starter</code>）方式自动装配</td></tr>
+    <tr><td>ORM</td><td>MyBatis-Plus 3.5.5（Mapper、分页、自动填充 MetaObjectHandler）</td></tr>
+    <tr><td>JSON / 工具</td><td>Jackson（配置解析、状态持久化）、Hutool、Lombok</td></tr>
+    <tr><td>LLM</td><td>DeepSeek / Doubao(火山方舟) / Kimi 三家 SDK 可切换（<code>large-language-model.active</code>），工厂模式 + Holder</td></tr>
+    <tr><td>数据库</td><td>MySQL（配置表、会话任务表、会话记录表），Liquibase 管理变更集</td></tr>
+    <tr><td>工程结构</td><td>3 模块：<code>easy-ai-autoconfigure</code>（核心）、<code>easy-ai-starter</code>（薄封装）、<code>easy-ai-demo</code>（演示）</td></tr>
+  </table>
+</div>
+
+<h2 id="module">2. 模块划分与职责</h2>
+<div class="card">
+  <div class="fig">
+    <div class="fig-title">easy-ai 工程模块结构（autoconfigure 共 158 个 Java 类）</div>
+    <pre><code>easy-ai (pom)
+├── easy-ai-autoconfigure          # 框架核心（自动装配，按 Spring Boot Starter 约定）
+│   └── com.link.easyai.starter
+│       ├── config/                # 自动装配入口 + LLM 配置 + Jackson/MyBatis-Plus 增强
+│       ├── controller/            # REST 入口：对话 chat + 任务配置管理 CRUD
+│       ├── domain/                # annotation(@AiScene) / dto / entity / enums / exception / vo
+│       ├── engine/                # ★ 任务引擎（核心，见分层图）
+│       │   ├── action/            #   动作引擎（@AiAction 注册 + 执行器 + 后置动作）
+│       │   ├── completion/        #   完成判定引擎（required/optional/INVALID 检查）
+│       │   ├── config/            #   配置模型（AiTaskConfig/FieldDefinition/...）
+│       │   ├── context/           #   TaskContext / FieldContext / ActionContext
+│       │   ├── extraction/        #   提取引擎（Prompt 构建 → LLM → JSON 解析 → 字段过滤）
+│       │   ├── mapping/           #   映射引擎（校验结果 → 动作参数）
+│       │   ├── normalization/     #   标准化引擎（自定义 normalizer 管道）
+│       │   ├── premise/           #   前置条件引擎（AND/OR 条件树）
+│       │   ├── spi/               #   业务查询 SPI（客户/渠道/国家/运单查询）
+│       │   ├── state/             #   任务状态机（TaskState/FieldState/状态流转）
+│       │   ├── validation/        #   校验引擎（ValidatorRegistry + 内置校验器）
+│       │   ├── AiTaskEngine.java  #   编排中枢接口 + 默认实现
+│       │   ├── AiTaskConfigService.java  # 配置源抽象（DB / JSON / 未来注解）
+│       │   └── AiTaskProperties.java     # easy-ai.task-engine.* 配置项
+│       ├── handle/                # MyBatis-Plus 自动填充（创建/更新时间）
+│       ├── mapper/                # MyBatis-Plus Mapper（配置、模板、会话）
+│       └── service/               # AiService（旧链路）+ AbstractAiSceneProcessor + LLM 工厂
+├── easy-ai-starter                # 仅声明依赖 autoconfigure 的薄 jar（引用即用）
+└── easy-ai-demo                   # 演示工程：修改订单场景（action / validator / normalizer / spi）</code></pre>
+  </div>
+</div>
+
+<h2 id="layers">3. 分层架构图</h2>
+<div class="fig">
+  <div class="fig-title">EasyAI 分层架构（新任务引擎链路为主）</div>
+  <svg viewBox="0 0 1060 720" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+    <defs>
+      <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 Z" fill="#8b95a5"/></marker>
+      <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1f2733" flood-opacity="0.08"/></filter>
+    </defs>
+
+    <!-- 接入层 -->
+    <rect x="30" y="18" width="1000" height="96" rx="12" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="48" y="44" font-size="14" font-weight="700" fill="#1e40af">接入层 · Controllers (REST)</text>
+    <rect x="48" y="56" width="300" height="44" rx="8" fill="#eff4ff" stroke="#93c5fd"/>
+    <text x="66" y="75" font-size="12.5" font-weight="600" fill="#1d4ed8">AiTaskEngineController</text>
+    <text x="66" y="92" font-size="11" fill="#6b7280">/easyai/engine/chat · /config/* CRUD</text>
+    <rect x="380" y="56" width="300" height="44" rx="8" fill="#eff4ff" stroke="#93c5fd"/>
+    <text x="398" y="75" font-size="12.5" font-weight="600" fill="#1d4ed8">TaskTemplateController（旧模板链路）</text>
+    <text x="398" y="92" font-size="11" fill="#6b7280">字段模板查询（tb_task_field_template）</text>
+    <rect x="712" y="56" width="280" height="44" rx="8" fill="#fef6e9" stroke="#fcd34d"/>
+    <text x="730" y="75" font-size="12.5" font-weight="600" fill="#b45309">外部调用方（客户业务系统）</text>
+    <text x="730" y="92" font-size="11" fill="#6b7280">HTTP · 登录态（UserDetails + tenantId）</text>
+
+    <!-- 服务层 -->
+    <rect x="30" y="132" width="1000" height="118" rx="12" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="48" y="158" font-size="14" font-weight="700" fill="#1e40af">服务层 · Services</text>
+    <rect x="48" y="170" width="300" height="64" rx="8" fill="#f4efff" stroke="#c4b5fd"/>
+    <text x="66" y="192" font-size="12.5" font-weight="600" fill="#6d28d9">AiService（旧链路入口）</text>
+    <text x="66" y="210" font-size="11" fill="#6b7280">意图匹配 → 场景路由 → 敏感信息脱敏 → 会话持久化</text>
+    <rect x="380" y="170" width="300" height="64" rx="8" fill="#f4efff" stroke="#c4b5fd"/>
+    <text x="398" y="192" font-size="12.5" font-weight="600" fill="#6d28d9">AbstractAiSceneProcessor（旧链路基类）</text>
+    <text x="398" y="210" font-size="11" fill="#6b7280">collectParam 字段收集 · validField 校验 · 场景处理钩子</text>
+    <rect x="712" y="170" width="280" height="64" rx="8" fill="#f4efff" stroke="#c4b5fd"/>
+    <text x="730" y="192" font-size="12.5" font-weight="600" fill="#6d28d9">LargeLanguageModelFactory / Holder</text>
+    <text x="730" y="210" font-size="11" fill="#6b7280">DeepSeek · Doubao · Kimi 三实现按配置切换</text>
+
+    <!-- 引擎层 -->
+    <rect x="30" y="268" width="1000" height="246" rx="12" fill="#ffffff" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="48" y="294" font-size="14" font-weight="700" fill="#15803d">任务引擎层 · Task Engine（编排中枢 DefaultAiTaskEngine）</text>
+
+    <!-- pipeline nodes -->
+    <rect x="48" y="308" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="60" y="329" font-size="12" font-weight="600" fill="#15803d">① 加载配置</text>
+    <text x="60" y="346" font-size="10.5" fill="#6b7280">configService.get()</text>
+    <rect x="228" y="308" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="240" y="329" font-size="12" font-weight="600" fill="#15803d">② 字段选择</text>
+    <text x="240" y="346" font-size="10.5" fill="#6b7280">FieldSelector + Premise</text>
+    <rect x="408" y="308" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="420" y="329" font-size="12" font-weight="600" fill="#15803d">③ 提取</text>
+    <text x="420" y="346" font-size="10.5" fill="#6b7280">Prompt→LLM→JSON</text>
+    <rect x="588" y="308" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="600" y="329" font-size="12" font-weight="600" fill="#15803d">④ 校验</text>
+    <text x="600" y="346" font-size="10.5" fill="#6b7280">Validator 管道</text>
+    <rect x="768" y="308" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="780" y="329" font-size="12" font-weight="600" fill="#15803d">⑤ 标准化</text>
+    <text x="780" y="346" font-size="10.5" fill="#6b7280">Normalizer</text>
+    <rect x="48" y="380" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="60" y="401" font-size="12" font-weight="600" fill="#15803d">⑥ 完成判定</text>
+    <text x="60" y="418" font-size="10.5" fill="#6b7280">CompletionEngine</text>
+    <rect x="228" y="380" width="150" height="52" rx="8" fill="#eefaf2" stroke="#4ade80"/>
+    <text x="240" y="401" font-size="12" font-weight="600" fill="#15803d">⑦ 参数映射</text>
+    <text x="240" y="418" font-size="10.5" fill="#6b7280">MappingEngine</text>
+    <rect x="408" y="380" width="330" height="52" rx="8" fill="#dbeafe" stroke="#60a5fa"/>
+    <text x="420" y="401" font-size="12" font-weight="600" fill="#1d4ed8">⑧ 执行动作 ActionEngine</text>
+    <text x="420" y="418" font-size="10.5" fill="#6b7280">主动作 @AiAction + 后置动作 @AiPostAction · 状态落库</text>
+    <rect x="768" y="380" width="150" height="52" rx="8" fill="#fef1f1" stroke="#fca5a5"/>
+    <text x="780" y="401" font-size="12" font-weight="600" fill="#dc2626">失败 → 回到收集</text>
+    <text x="780" y="418" font-size="10.5" fill="#6b7280">状态机 COLLECTING</text>
+
+    <!-- arrows -->
+    <line x1="198" y1="334" x2="222" y2="334" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="378" y1="334" x2="402" y2="334" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="558" y1="334" x2="582" y2="334" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="738" y1="334" x2="762" y2="334" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="873" y1="360" x2="873" y2="374" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="198" y1="406" x2="222" y2="406" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="378" y1="406" x2="402" y2="406" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <line x1="738" y1="406" x2="762" y2="406" stroke="#8b95a5" stroke-width="1.6" marker-end="url(#arr)"/>
+    <path d="M783 430 C 783 470, 540 470, 540 440" stroke="#fca5a5" stroke-width="1.4" fill="none" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+    <!-- 配置层 -->
+    <rect x="30" y="532" width="1000" height="96" rx="12" fill="#ffffff" stroke="#fcd34d" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="48" y="558" font-size="14" font-weight="700" fill="#b45309">配置层 · Config Source（AiTaskConfigService 抽象）</text>
+    <rect x="48" y="570" width="290" height="44" rx="8" fill="#fef6e9" stroke="#fcd34d"/>
+    <text x="66" y="589" font-size="12.5" font-weight="600" fill="#b45309">DefaultAiTaskConfigService（现状）</text>
+    <text x="66" y="606" font-size="11" fill="#6b7280">ai_task_config 表 JSON · 版本化 · 缓存</text>
+    <rect x="370" y="570" width="290" height="44" rx="8" fill="#fef6e9" stroke="#fcd34d" stroke-dasharray="5 4"/>
+    <text x="388" y="589" font-size="12.5" font-weight="600" fill="#b45309">AnnotationConfigService（目标方案）</text>
+    <text x="388" y="606" font-size="11" fill="#6b7280">实体类注解扫描 → FieldDefinition ★ 本期改造</text>
+    <rect x="692" y="570" width="290" height="44" rx="8" fill="#f3f4f6" stroke="#d1d5db"/>
+    <text x="710" y="589" font-size="12.5" font-weight="600" fill="#374151">JsonConfigService（预留）</text>
+    <text x="710" y="606" font-size="11" fill="#6b7280">classpath:ai-task-configs/ 目录 JSON</text>
+
+    <!-- 基础设施 -->
+    <rect x="30" y="646" width="1000" height="58" rx="12" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="48" y="672" font-size="14" font-weight="700" fill="#1e40af">基础设施层</text>
+    <text x="48" y="692" font-size="12" fill="#6b7280">MyBatis-Plus（Mapper/分页/自动填充） · Jackson（配置/状态序列化） · LLM SDK（DeepSeek/Doubao/Kimi） · MySQL（配置+会话+记录） · Liquibase</text>
+
+    <!-- vertical connectors -->
+    <line x1="530" y1="132" x2="530" y2="126" stroke="none"/>
+    <line x1="530" y1="248" x2="530" y2="262" stroke="#cbd5e1" stroke-width="1.4" marker-end="url(#arr)"/>
+    <line x1="530" y1="512" x2="530" y2="526" stroke="#cbd5e1" stroke-width="1.4" marker-end="url(#arr)"/>
+  </svg>
+</div>
+<div class="tip">关键设计：<code>AiTaskConfigService</code> 是配置源的抽象边界，替换实现即可切换配置来源（DB JSON / JSON 文件 / 注解扫描）——这正是本期「注解化改造」可以做到引擎零改动的立足点。</div>
+
+<h2 id="pipeline">4. 任务引擎核心流水线</h2>
+<div class="card">
+  <p><code>DefaultAiTaskEngine.execute(taskType, taskId, userMessage, taskContext)</code> 单轮处理流程：</p>
+  <div class="fig">
+    <div class="fig-title">单轮对话处理时序（状态机：INITIALIZED → COLLECTING → READY → EXECUTING → COMPLETED / FAILED）</div>
+    <pre><code>用户消息
+  │
+  ▼
+① 解析配置版本：已有任务绑定版本优先，否则取最新 PUBLISHED 版本
+  │  （configService.get(taskType, configVersion)，DB JSON 反序列化为 AiTaskConfig）
+  ▼
+② 加载/创建 TaskState（任务状态，含各字段 FieldState）
+  │
+  ▼
+③ FieldSelector.select()：筛选"待收集字段"
+  │   过滤条件：未完成 + 前置条件(PremiseEngine)满足；按 order 升序
+  │   若待收集为空 → 完成判定，进入动作执行
+  ▼
+④ ExtractionEngine.extract()：PromptBuilder 构建系统提示词（字段代码/名称/类型/
+  │   说明/示例/规则/可选值 + 已收集上下文）→ LLM 调用 → 容错解析 JSON
+  │   只保留 pending 字段结果，其余丢弃（不信任 LLM 输出）
+  ▼
+⑤ ValidationEngine.validate()：对每个提取字段执行校验器管道
+  │   rawValue → V1 → V2 → ... → 标准值 + data 附加数据
+  │   失败 → FieldState=INVALID(errorCode/errorMessage)，onFail=BLOCK 时整任务 FAILED
+  ▼
+⑥ NormalizationEngine.normalize()：对 VALID 字段执行标准化（如 PI966→完整描述）
+  │   成功 → 替换 value + 合并 data；失败 → 置 INVALID 重新收集
+  ▼
+⑦ CompletionEngine.completed()：required 全部 VALID/CONFIRMED + 无 INVALID → READY
+  │   未完成 → 生成"还缺什么"的追问文案（ResponseBuilder.buildNeedMore）
+  ▼
+⑧ MappingEngine.assemble()：按 MappingRule 将校验结果映射为动作参数
+  │   表达式：$value / $rawValue / $data.xxx
+  ▼
+⑨ ActionEngine.execute()：执行 @AiAction 主动作 + @AiPostAction 后置动作
+  │   成功 → COMPLETED；失败 → 回到 COLLECTING，保留进度重试</code></pre>
+  </div>
+  <div class="note"><strong>容错设计</strong>：整条管道被 try/catch 包裹，任何子引擎异常都不会击穿调用方对话流——降级为「需要更多信息」响应并持久化已取得的状态；状态先落库再返回，崩溃不丢失进度。</div>
+</div>
+
+<h2 id="config-model">5. 配置模型（数据库 JSON）</h2>
+<div class="card">
+  <p><code>ai_task_config.config_json</code> 反序列化为 <code>AiTaskConfig</code>，结构如下（以 demo 的 ORDER_UPDATE 为例）：</p>
+  <div class="fig">
+    <div class="fig-title">AiTaskConfig 配置模型（FieldDefinition 是核心，覆盖"提取/前提/校验/标准化/映射"全生命周期）</div>
+    <pre><code>AiTaskConfig                          # 一个业务场景配置（taskType + version 唯一）
+├── taskType / version / name / description
+├── fields: List&lt;FieldDefinition&gt;     # 字段定义列表（收集顺序 = order）
+│   └── FieldDefinition
+│       ├── code / name / type(STRING|INTEGER|...|STRING_LIST) 
+│       ├── required / sensitive / order
+│       ├── extraction: ExtractionConfig   # ★ 提取规则
+│       │   ├── description    # 字段含义说明（进 Prompt）
+│       │   ├── examples[]     # 示例值（进 Prompt）
+│       │   ├── rules[]        # 提取约束（进 Prompt）
+│       │   └── allowEmpty
+│       ├── premise: PremiseConfig         # 前置条件（exists/eq/in + AND/OR 树）
+│       ├── validation: ValidationConfig   # ★ 校验配置
+│       │   ├── mode=PIPELINE / onFail=RETRY|BLOCK
+│       │   └── validators[]: { type: "REGEX", params: {pattern, message} }
+│       ├── normalization: NormalizationConfig  # 标准化 { type: "CARGO_DESC", params }
+│       ├── mappings[]: MappingRule        # { target: "a.b", source: "$data.x" }
+│       └── options[]: OptionDefinition    # 枚举 { label: "确认", value: 1 }
+├── completion: CompletionConfig   # requiredFields / optionalFields
+└── action: ActionConfig           # type: "UPDATE_ORDER", postActions: ["LOG"], params</code></pre>
+  </div>
+  <p><strong>配置生命周期</strong>：DRAFT（保存草稿）→ PUBLISHED（发布，同 taskType 旧发布版自动 DISABLED）→ DISABLED（停用）。新任务取最新 PUBLISHED；在途任务绑定创建时的版本，重发布不影响。</p>
+  <p><strong>缓存策略</strong>：仅 PUBLISHED/DISABLED 的不可变快照进入 ConcurrentHashMap 缓存，以 <code>taskType|version</code> 为键；草稿不缓存。</p>
+</div>
+
+<h2 id="validation">6. 校验体系现状与问题</h2>
+<div class="card">
+  <div class="fig">
+    <div class="fig-title">校验链路（ValidatorRegistry 注册表 + 管道式执行）</div>
+    <pre><code>FieldDefinition.validation.validators[]          FieldValidator 实现
+┌───────────────────────────────┐   ┌──────────────────────────────────────┐
+│ { "type": "NOT_EMPTY" }       │──▶│ @AiValidator("NOT_EMPTY")             │
+│ { "type": "REGEX",            │──▶│ @AiValidator("REGEX")                 │
+│   "params": {"pattern": ...} }│   │  validate(value, FieldContext, params)│
+│ { "type": "CUSTOMER_EXIST" }  │──▶│ @AiValidator("CUSTOMER_EXIST")        │
+│ { "type": "CONFIRM",          │──▶│ @AiValidator("CONFIRM")               │
+│   "params": {"confirmValue":1}}│  │  （通过 SPI 查库，返回 data 供映射）    │
+└───────────┬───────────────────┘   └──────────────────────────────────────┘
+            │ 按序执行（管道：前一校验器输出作为后一校验器输入）
+            ▼
+  ValidationResult { valid, value(转换后), data(附加数据), errorCode, message }
+            │
+            ▼
+  FieldState: VALID / INVALID（rawValue + errorCode + errorMessage）
+  失败策略：onFail=RETRY（追问重试）| BLOCK（整任务 FAILED）</code></pre>
+  </div>
+
+  <h3>6.1 框架内置校验器清单</h3>
+  <table>
+    <tr><th>校验器 type</th><th>定位</th><th>参数</th></tr>
+    <tr><td>NOT_EMPTY</td><td><span class="tag green">通用</span>非空</td><td>—</td></tr>
+    <tr><td>REGEX</td><td><span class="tag green">通用</span>正则</td><td>pattern, message</td></tr>
+    <tr><td>STRING_LENGTH</td><td><span class="tag green">通用</span>长度区间</td><td>min, max</td></tr>
+    <tr><td>NUMBER_RANGE</td><td><span class="tag green">通用</span>数值区间</td><td>min, max</td></tr>
+    <tr><td>ENUM</td><td><span class="tag green">通用</span>枚举映射（label→value）</td><td>读取字段 options</td></tr>
+    <tr><td>CONFIRM</td><td><span class="tag green">通用</span>确认语义（附 confirmed 标志）</td><td>confirmValue</td></tr>
+    <tr><td>CUSTOMER_EXIST</td><td><span class="tag amber">业务</span>客户存在性（SPI 查库）</td><td>—</td></tr>
+    <tr><td>CUSTOMER_PERMISSION</td><td><span class="tag amber">业务</span>客户操作权限（SPI）</td><td>—</td></tr>
+    <tr><td>CHANNEL_EXIST</td><td><span class="tag amber">业务</span>渠道存在性（SPI）</td><td>channelType</td></tr>
+    <tr><td>COUNTRY_EXIST</td><td><span class="tag amber">业务</span>国家存在性（SPI）</td><td>—</td></tr>
+    <tr><td>WAYBILL_EDITABLE</td><td><span class="tag amber">业务</span>运单可改（SPI）</td><td>—</td></tr>
+  </table>
+
+  <h3>6.2 现状痛点（本期改造的动因）</h3>
+  <div class="warn">
+    <ol>
+      <li><strong>配置与代码分离</strong>：哪个字段用哪些校验器、参数是什么，全部写在 DB 的 JSON 里。新增/调整校验需改库（或通过管理接口），无编译期校验，JSON 手写易错、易产生脏配置。</li>
+      <li><strong>字段语义不内聚</strong>：提取规则（description/examples/rules）、校验、枚举、映射散落在配置 JSON 与实体类两端，实体类本身没有任何标注，可读性差。</li>
+      <li><strong>框架越权承载业务校验</strong>：<code>CUSTOMER_EXIST</code>、<code>CHANNEL_EXIST</code> 等明显是"客户业务侧"的校验逻辑，却以框架内置校验器形态打进 starter，每个接入方都要复用/扩展，框架日益臃肿且耦合具体业务。</li>
+      <li><strong>旧链路 validField 硬编码</strong>：<code>AbstractAiSceneProcessor.validField()</code> 用 switch-case 按字段名校验，新增字段校验必须改基类子类的 Java 代码，复用性差。</li>
+      <li><strong>定制校验门槛高</strong>：客户虽然可实现 <code>FieldValidator</code> + <code>@AiValidator</code>，但必须同时改 DB JSON 引用它，两步操作割裂，且缺少注解式声明入口。</li>
+    </ol>
+  </div>
+</div>
+
+<h2 id="extension">7. 扩展点汇总</h2>
+<div class="card">
+  <table>
+    <tr><th>扩展点</th><th>机制</th><th>客户如何接入</th></tr>
+    <tr><td>场景处理器</td><td><code>@AiScene(code)</code> + 继承 <code>AbstractAiSceneProcessor</code>（旧链路）</td><td>实现 transScenarioMsg / doProcess / validField</td></tr>
+    <tr><td>字段校验器</td><td><code>FieldValidator</code> + <code>@AiValidator("TYPE")</code>，启动时 ValidatorRegistrar 自动注册</td><td>实现接口，配置 JSON 中按 type 引用</td></tr>
+    <tr><td>字段标准化器</td><td><code>FieldNormalizer</code>（Spring bean，按 type 查找）</td><td>实现接口，配置 JSON normalization.type 引用</td></tr>
+    <tr><td>业务动作</td><td><code>ActionExecutor</code> + <code>@AiAction("TYPE")</code> / <code>@AiPostAction</code></td><td>实现 execute，配置 JSON action.type 引用</td></tr>
+    <tr><td>业务查询 SPI</td><td><code>CustomerLookupService</code> / <code>ChannelLookupService</code> / <code>CountryLookupService</code> / <code>WaybillLookupService</code></td><td>实现 SPI 接口并注册 Spring bean</td></tr>
+    <tr><td>配置来源</td><td><code>AiTaskConfigService</code> 接口</td><td>可替换实现（DB / JSON / 注解）</td></tr>
+    <tr><td>LLM 供应商</td><td><code>LargeLanguageModel</code> + 工厂</td><td>新增 SDK 实现并注册工厂</td></tr>
+  </table>
+  <div class="note"><strong>观察</strong>：校验器 / 标准化器 / 动作 / SPI 均已做到"注册式扩展"，唯独<strong>配置声明（哪个字段用哪个扩展、参数是什么）仍是 DB JSON</strong>。注解化改造的实质就是把"配置声明"这一环搬到实体类上，与代码同源、编译期可查。</div>
+</div>
+
+<h2 id="summary">8. 架构结论</h2>
+<div class="card">
+  <ul>
+    <li><strong>骨架健康</strong>：引擎各阶段职责单一（extraction / validation / normalization / mapping / completion / action / state），接口 + 默认实现 + 注册表的结构清晰，扩展点丰富。</li>
+    <li><strong>演进方向明确</strong>：任务引擎链路（DB JSON 配置）已取代旧场景模板链路成为主干；但旧链路代码（AiService / AbstractAiSceneProcessor / 模板表）仍保留。</li>
+    <li><strong>改造切入点清晰</strong>：配置源抽象 <code>AiTaskConfigService</code> 是注解化的天然落点——新增注解扫描实现，引擎主体可零改动复用全部流水线能力（提取、校验、标准化、映射、动作、状态机）。</li>
+    <li><strong>待解决问题</strong>：①配置声明与代码分离；②业务校验器过度内置于框架；③实体类字段缺少语义标注。详见配套文档《注解化改造方案》。</li>
+  </ul>
+</div>
+
+<div class="muted" style="text-align:center;margin-top:36px;">EasyAI 框架架构分析 · 基于源码 v1.0.0-SNAPSHOT（easy-ai-autoconfigure 158 类）</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,348 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0001-init-easy-ai-tables
+      author: easy-ai
+      preconditions:
+        # Databases that already hold these tables (e.g. legacy projects) skip creation.
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: tb_chat_record
+      changes:
+        - createTable:
+            tableName: tb_chat_record
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: record
+                  type: TEXT
+              - column:
+                  name: type
+                  type: INT
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+              - column:
+                  name: create_by
+                  type: BIGINT
+              - column:
+                  name: update_by
+                  type: BIGINT
+              - column:
+                  name: create_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: update_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createTable:
+            tableName: tb_chat_session_task
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: type
+                  type: INT
+              - column:
+                  name: field_list
+                  type: TEXT
+              - column:
+                  name: records
+                  type: TEXT
+              - column:
+                  name: extra_content
+                  type: TEXT
+              - column:
+                  name: status
+                  type: INT
+              - column:
+                  name: scenario_code
+                  type: INT
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+              - column:
+                  name: create_by
+                  type: BIGINT
+              - column:
+                  name: update_by
+                  type: BIGINT
+              - column:
+                  name: create_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: update_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: deleted
+                  type: TINYINT
+                  defaultValueNumeric: 0
+        - createTable:
+            tableName: tb_task_field_template
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: template_name
+                  type: VARCHAR(255)
+              - column:
+                  name: description
+                  type: VARCHAR(500)
+              - column:
+                  name: field_list
+                  type: TEXT
+              - column:
+                  name: scenario_code
+                  type: INT
+              - column:
+                  name: enable
+                  type: INT
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+              - column:
+                  name: create_by
+                  type: BIGINT
+              - column:
+                  name: update_by
+                  type: BIGINT
+              - column:
+                  name: create_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: update_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: deleted
+                  type: TINYINT
+                  defaultValueNumeric: 0
+  - changeSet:
+      id: 0002-add-ai-task-engine-tables
+      author: easy-ai
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: ai_task_config
+      changes:
+        - createTable:
+            tableName: ai_task_config
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: task_type
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  name: config_json
+                  type: LONGTEXT
+              - column:
+                  name: status
+                  type: VARCHAR(20)
+                  defaultValue: 'DRAFT'
+                  constraints:
+                    nullable: false
+              - column:
+                  name: published_time
+                  type: DATETIME
+              - column:
+                  name: create_by
+                  type: BIGINT
+              - column:
+                  name: update_by
+                  type: BIGINT
+              - column:
+                  name: create_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: update_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: deleted
+                  type: TINYINT
+                  defaultValueNumeric: 0
+        - addUniqueConstraint:
+            tableName: ai_task_config
+            columnNames: task_type, version
+            constraintName: uk_task_type_version
+  - changeSet:
+      id: 0003-add-engine-fields-to-task
+      author: easy-ai
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: tb_chat_session_task
+            columnName: task_type
+      changes:
+        - addColumn:
+            tableName: tb_chat_session_task
+            columns:
+              - column:
+                  name: task_type
+                  type: VARCHAR(100)
+                  afterColumn: scenario_code
+              - column:
+                  name: config_version
+                  type: INT
+                  afterColumn: task_type
+  - changeSet:
+      id: 0004-add-ai-task-state-column
+      author: easy-ai
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: tb_chat_session_task
+            columnName: ai_task_state
+      changes:
+        - addColumn:
+            tableName: tb_chat_session_task
+            columns:
+              - column:
+                  name: ai_task_state
+                  type: LONGTEXT
+                  afterColumn: config_version
+  - changeSet:
+      id: 0005-add-version-to-task-table
+      author: easy-ai
+      comment: 乐观锁 version 字段，用于并发安全
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: tb_chat_session_task
+            columnName: version
+      changes:
+        - addColumn:
+            tableName: tb_chat_session_task
+            columns:
+              - column:
+                  name: version
+                  type: INT
+                  defaultValueNumeric: 0
+                  afterColumn: ai_task_state
+  - changeSet:
+      id: 0006-create-ai-chat-session-table
+      author: easy-ai
+      comment: 会话状态表，维护 sessionId 与当前活跃任务的绑定关系，支持多轮对话连续性与任务切换
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: ai_chat_session
+      changes:
+        - createTable:
+            tableName: ai_chat_session
+            remarks: AI 会话状态表（sessionId 与活跃任务绑定）
+            columns:
+              - column:
+                  name: session_id
+                  type: VARCHAR(128)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: current_task_id
+                  type: VARCHAR(64)
+                  remarks: 当前活跃任务 ID，NULL 表示无活跃任务
+              - column:
+                  name: current_task_type
+                  type: VARCHAR(100)
+                  remarks: 当前任务类型，冗余便于查询
+              - column:
+                  name: status
+                  type: TINYINT
+                  defaultValueNumeric: 0
+                  remarks: 0-IDLE, 1-ACTIVE, 2-EXPIRED
+              - column:
+                  name: last_active_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  remarks: 最后活跃时间，用于超时判断
+              - column:
+                  name: turn_count
+                  type: INT
+                  defaultValueNumeric: 0
+                  remarks: 当前任务已进行轮次
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  defaultValueNumeric: 0
+              - column:
+                  name: create_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: update_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+        - createIndex:
+            tableName: ai_chat_session
+            indexName: idx_ai_chat_session_task_id
+            columns:
+              - column:
+                  name: current_task_id
+  - changeSet:
+      id: 0007-add-task-id-to-session-task
+      author: easy-ai
+      comment: 增加 task_id 业务键字段，支持任意字符串格式的 taskId，替代用自增 id 作为 taskId 的脆弱设计
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: tb_chat_session_task
+            columnName: task_id
+      changes:
+        - addColumn:
+            tableName: tb_chat_session_task
+            columns:
+              - column:
+                  name: task_id
+                  type: VARCHAR(128)
+                  afterColumn: id
+        - createIndex:
+            tableName: tb_chat_session_task
+            indexName: uk_task_id
+            unique: true
+            columns:
+              - column:
+                  name: task_id
