@@ -16,12 +16,12 @@ import java.util.Map;
  * Database-backed implementation of {@link TaskStateManager}.
  * <p>
  * Persists the full {@link TaskState} as JSON in the <code>ai_task_state</code>
- * column of <code>tb_chat_session_task</code>. This ensures every turn of a
+ * column of <code>ai_chat_session_task</code>. This ensures every turn of a
  * conversation can restore the complete state from the database, even if the
  * JVM restarts.
  * <p>
  * The <code>taskId</code> used by the engine corresponds to the
- * <code>id</code> (Long) of <code>tb_chat_session_task</code> serialized as a
+ * <code>id</code> (Long) of <code>ai_chat_session_task</code> serialized as a
  * String. When <code>taskId</code> is null or blank, a fresh in-memory state is
  * created; the record is only inserted on the first {@link #save} call.
  * <p>
@@ -252,7 +252,7 @@ public class DefaultTaskStateManager implements TaskStateManager {
 
     /**
      * Map the engine's {@link TaskStatus} to the int status column used by
-     * tb_chat_session_task.
+     * ai_chat_session_task.
      * <p>
      * Existing status convention: 0-待处理 1-待唤醒 2-处理中 3-失败 4-已停止 5-已完成
      */

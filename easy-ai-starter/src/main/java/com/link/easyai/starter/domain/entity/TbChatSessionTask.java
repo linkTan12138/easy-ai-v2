@@ -1,8 +1,10 @@
 package com.link.easyai.starter.domain.entity;
 
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 @Data
+@TableName("ai_chat_session_task")
 public class TbChatSessionTask extends BaseEntity {
 
     private Long id;

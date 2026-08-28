@@ -447,7 +447,7 @@ easy-ai:
 | `ai_chat_session` | 会话表，存储会话状态和任务绑定 |
 | `ai_task_config` | 任务配置表（注解配置时 version 恒为 1） |
 | `ai_task_lock` | 分布式锁表 |
-| `tb_chat_session_task` | 任务状态表，存储完整 TaskState JSON |
+| `ai_chat_session_task` | 任务状态表，存储完整 TaskState JSON |
 
 ---
 

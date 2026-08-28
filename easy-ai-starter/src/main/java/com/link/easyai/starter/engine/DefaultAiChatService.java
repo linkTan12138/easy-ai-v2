@@ -148,8 +148,10 @@ public class DefaultAiChatService implements AiChatService {
 
         // 记录对话历史（滑动窗口），用于下一轮的上下文理解
         try {
-            chatHistoryManager.appendUserMessage(sessionId, safeMessage);
-            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage());
+            String taskId = response.getTaskId() != null ? response.getTaskId() : session.getCurrentTaskId();
+            String taskType = response.getTaskType() != null ? response.getTaskType() : session.getCurrentTaskType();
+            chatHistoryManager.appendUserMessage(sessionId, safeMessage, taskId, taskType, tenantId);
+            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage(), taskId, taskType, tenantId);
         } catch (Exception e) {
             log.warn("[AiChatService] failed to record chat history for session={}: {}", sessionId, e.getMessage());
         }
@@ -211,8 +213,10 @@ public class DefaultAiChatService implements AiChatService {
 
         // 记录对话历史
         try {
-            chatHistoryManager.appendUserMessage(sessionId, safeMessage);
-            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage());
+            String taskId = response.getTaskId() != null ? response.getTaskId() : session.getCurrentTaskId();
+            String respTaskType = response.getTaskType() != null ? response.getTaskType() : taskType;
+            chatHistoryManager.appendUserMessage(sessionId, safeMessage, taskId, respTaskType, tenantId);
+            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage(), taskId, respTaskType, tenantId);
         } catch (Exception e) {
             log.warn("[AiChatService] failed to record chat history (chatWithTaskType) session={}: {}", sessionId, e.getMessage());
         }

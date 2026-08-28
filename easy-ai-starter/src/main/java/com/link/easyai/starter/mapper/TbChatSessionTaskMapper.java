@@ -23,13 +23,13 @@ public interface TbChatSessionTaskMapper extends BaseMapper<TbChatSessionTask> {
      * 查询指定租户最近一个未完成的任务（状态=处理中 2），按更新时间倒序取第一条。
      * 用于多轮对话连续性恢复：当 session 中没有活跃任务时，尝试找回上一轮未完成任务。
      */
-    @Select("SELECT * FROM tb_chat_session_task WHERE tenant_id = #{tenantId} AND status = 2 AND deleted = 0 " +
+    @Select("SELECT * FROM ai_chat_session_task WHERE tenant_id = #{tenantId} AND status = 2 AND deleted = 0 " +
             "ORDER BY update_time DESC LIMIT 1")
     TbChatSessionTask selectLatestActiveByTenant(@Param("tenantId") Long tenantId);
 
     /**
      * 按业务 task_id 查询任务记录（唯一索引）。
      */
-    @Select("SELECT * FROM tb_chat_session_task WHERE task_id = #{taskId} AND deleted = 0 LIMIT 1")
+    @Select("SELECT * FROM ai_chat_session_task WHERE task_id = #{taskId} AND deleted = 0 LIMIT 1")
     TbChatSessionTask selectByTaskId(@Param("taskId") String taskId);
 }

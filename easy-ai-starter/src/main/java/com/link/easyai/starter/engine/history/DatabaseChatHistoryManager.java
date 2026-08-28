@@ -1,9 +1,7 @@
 package com.link.easyai.starter.engine.history;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.link.easyai.starter.domain.entity.AiChatSession;
-import com.link.easyai.starter.mapper.AiChatSessionMapper;
+import com.link.easyai.starter.domain.entity.AiChatMessage;
+import com.link.easyai.starter.mapper.AiChatMessageMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,10 +13,11 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 基于数据库的对话历史管理器实现。
+ * 基于独立消息表的对话历史管理器实现。
  * <p>
- * 将对话历史以 JSON 数组形式存储在 ai_chat_session.chat_history 字段中，
- * 采用滑动窗口策略保留最近 N 轮对话（默认10轮，即20条消息）。
+ * 将每条对话消息独立存储在 ai_chat_message 表中，
+ * 采用滑动窗口策略保留最近 N 条消息（默认20条，即10轮 user+assistant）。
+ * 超出窗口的旧消息通过逻辑删除标记，不物理删除以便审计追溯。
  */
 @Component
 public class DatabaseChatHistoryManager implements ChatHistoryManager {
@@ -29,13 +28,11 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
     @Value("${easy-ai.task-engine.history.max-messages:20}")
     private int maxMessages;
 
-    private final AiChatSessionMapper sessionMapper;
-    private final ObjectMapper objectMapper;
+    private final AiChatMessageMapper messageMapper;
 
     @Autowired
-    public DatabaseChatHistoryManager(AiChatSessionMapper sessionMapper, ObjectMapper objectMapper) {
-        this.sessionMapper = sessionMapper;
-        this.objectMapper = objectMapper;
+    public DatabaseChatHistoryManager(AiChatMessageMapper messageMapper) {
+        this.messageMapper = messageMapper;
     }
 
     @Override
@@ -43,48 +40,82 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
         if (sessionId == null || sessionId.isBlank()) {
             return Collections.emptyList();
         }
-        AiChatSession session = sessionMapper.selectById(sessionId);
-        if (session == null || session.getChatHistory() == null || session.getChatHistory().isBlank()) {
-            return Collections.emptyList();
-        }
         try {
-            return objectMapper.readValue(session.getChatHistory(),
-                    new TypeReference<List<ChatMessage>>() {});
+            // 查询最近 N 条消息（倒序），然后反转成正序
+            List<AiChatMessage> recent = messageMapper.selectRecentBySessionId(sessionId, maxMessages);
+            if (recent == null || recent.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<ChatMessage> result = new ArrayList<>(recent.size());
+            for (int i = recent.size() - 1; i >= 0; i--) {
+                AiChatMessage m = recent.get(i);
+                result.add(ChatMessage.builder()
+                        .role(m.getRole())
+                        .content(m.getContent())
+                        .timestamp(m.getCreateTime() != null ? m.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() : null)
+                        .build());
+            }
+            return result;
         } catch (Exception e) {
-            log.warn("[ChatHistory] failed to parse chat history for session={}: {}", sessionId, e.getMessage());
+            log.warn("[ChatHistory] failed to load history for session={}: {}", sessionId, e.getMessage());
             return Collections.emptyList();
         }
     }
 
     @Override
     public void appendUserMessage(String sessionId, String content) {
-        appendMessage(sessionId, ChatMessage.user(content));
+        appendUserMessage(sessionId, content, null, null, null);
     }
 
     @Override
     public void appendAssistantMessage(String sessionId, String content) {
-        appendMessage(sessionId, ChatMessage.assistant(content));
+        appendAssistantMessage(sessionId, content, null, null, null);
     }
 
-    private void appendMessage(String sessionId, ChatMessage message) {
-        if (sessionId == null || sessionId.isBlank() || message == null) {
+    @Override
+    public void appendUserMessage(String sessionId, String content, String taskId, String taskType, Long tenantId) {
+        appendMessage(sessionId, "user", content, taskId, taskType, tenantId);
+    }
+
+    @Override
+    public void appendAssistantMessage(String sessionId, String content, String taskId, String taskType, Long tenantId) {
+        appendMessage(sessionId, "assistant", content, taskId, taskType, tenantId);
+    }
+
+    private void appendMessage(String sessionId, String role, String content,
+                               String taskId, String taskType, Long tenantId) {
+        if (sessionId == null || sessionId.isBlank() || content == null) {
             return;
         }
         try {
-            List<ChatMessage> history = loadHistory(sessionId);
-            if (history == null) {
-                history = new ArrayList<>();
-            }
-            history.add(message);
+            int turnIndex = messageMapper.selectMaxTurnIndex(sessionId) + 1;
 
-            // 滑动窗口：超出最大消息数时丢弃最旧的消息
-            while (history.size() > maxMessages) {
-                history.remove(0);
+            AiChatMessage message = new AiChatMessage();
+            message.setSessionId(sessionId);
+            message.setRole(role);
+            message.setContent(content);
+            message.setTaskId(taskId);
+            message.setTaskType(taskType);
+            message.setTurnIndex(turnIndex);
+            message.setTenantId(tenantId);
+            message.setDeleted(0);
+            messageMapper.insert(message);
+
+            // 滑动窗口：超出最大消息数时，逻辑删除最旧的消息
+            long total = messageMapper.countBySessionId(sessionId);
+            if (total > maxMessages) {
+                int excess = (int) (total - maxMessages);
+                List<AiChatMessage> oldMessages = messageMapper.selectRecentBySessionId(sessionId, (int) total);
+                // selectRecentBySessionId 是倒序，最旧的在最后
+                for (int i = 0; i < excess && i < oldMessages.size(); i++) {
+                    AiChatMessage old = oldMessages.get(oldMessages.size() - 1 - i);
+                    old.setDeleted(1);
+                    messageMapper.updateById(old);
+                }
             }
 
-            String json = objectMapper.writeValueAsString(history);
-            sessionMapper.updateChatHistory(sessionId, json);
-            log.debug("[ChatHistory] appended message to session={}, total={}", sessionId, history.size());
+            log.debug("[ChatHistory] appended {} message to session={}, turn={}, total={}",
+                    role, sessionId, turnIndex, total);
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to append message for session={}: {}", sessionId, e.getMessage());
         }
@@ -96,7 +127,7 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             return;
         }
         try {
-            sessionMapper.clearChatHistory(sessionId);
+            messageMapper.softDeleteBySessionId(sessionId);
             log.debug("[ChatHistory] cleared history for session={}", sessionId);
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to clear history for session={}: {}", sessionId, e.getMessage());
@@ -109,11 +140,52 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             return "";
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("以下是本次对话的历史记录（仅供上下文参考，不要重复回答已回答过的问题）：\n");
+        sb.append("以下是本次对话的历史记录（仅供上下文参考，注意用户可能用\"刚才那个\"、\"上面说的\"等指代历史中的信息）：\n");
         for (ChatMessage msg : history) {
             String role = "user".equalsIgnoreCase(msg.getRole()) ? "用户" : "AI";
             sb.append("[").append(role).append("]：").append(msg.getContent()).append("\n");
         }
         return sb.toString();
+    }
+
+    @Override
+    public List<AiChatMessage> listMessages(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            return messageMapper.selectAllBySessionId(sessionId);
+        } catch (Exception e) {
+            log.warn("[ChatHistory] failed to list messages for session={}: {}", sessionId, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public List<AiChatMessage> listMessages(String sessionId, int page, int size) {
+        if (sessionId == null || sessionId.isBlank() || page < 1 || size < 1) {
+            return Collections.emptyList();
+        }
+        try {
+            int offset = (page - 1) * size;
+            return messageMapper.selectPageBySessionId(sessionId, offset, size);
+        } catch (Exception e) {
+            log.warn("[ChatHistory] failed to list messages (page={},size={}) for session={}: {}",
+                    page, size, sessionId, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public long countMessages(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return 0;
+        }
+        try {
+            return messageMapper.countBySessionId(sessionId);
+        } catch (Exception e) {
+            log.warn("[ChatHistory] failed to count messages for session={}: {}", sessionId, e.getMessage());
+            return 0;
+        }
     }
 }

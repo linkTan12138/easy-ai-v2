@@ -7,10 +7,10 @@ databaseChangeLog:
         onFail: MARK_RAN
         not:
           tableExists:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
       changes:
         - createTable:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columns:
               - column:
                   name: id
@@ -131,11 +131,11 @@ databaseChangeLog:
         onFail: MARK_RAN
         not:
           columnExists:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columnName: task_type
       changes:
         - addColumn:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columns:
               - column:
                   name: task_type
@@ -152,11 +152,11 @@ databaseChangeLog:
         onFail: MARK_RAN
         not:
           columnExists:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columnName: ai_task_state
       changes:
         - addColumn:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columns:
               - column:
                   name: ai_task_state
@@ -170,11 +170,11 @@ databaseChangeLog:
         onFail: MARK_RAN
         not:
           columnExists:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columnName: version
       changes:
         - addColumn:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columns:
               - column:
                   name: version
@@ -250,18 +250,18 @@ databaseChangeLog:
         onFail: MARK_RAN
         not:
           columnExists:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columnName: task_id
       changes:
         - addColumn:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             columns:
               - column:
                   name: task_id
                   type: VARCHAR(128)
                   afterColumn: id
         - createIndex:
-            tableName: tb_chat_session_task
+            tableName: ai_chat_session_task
             indexName: uk_task_id
             unique: true
             columns:
@@ -324,4 +324,83 @@ databaseChangeLog:
               - column:
                   name: chat_history
                   type: LONGTEXT
-                  remarks: 对话历史JSON数组（滑动窗口）
+                  remarks: 对话历史JSON数组（滑动窗口，已废弃，迁移至 ai_chat_message 表）
+  - changeSet:
+      id: 0010-create-chat-message-table
+      author: easy-ai
+      comment: 独立对话消息表，替代 ai_chat_session.chat_history JSON 字段，支持历史查询与分页
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: ai_chat_message
+      changes:
+        - createTable:
+            tableName: ai_chat_message
+            remarks: AI对话消息表
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role
+                  type: VARCHAR(32)
+                  remarks: 消息角色：user / assistant / system
+                  constraints:
+                    nullable: false
+              - column:
+                  name: content
+                  type: LONGTEXT
+                  remarks: 消息内容
+              - column:
+                  name: task_id
+                  type: VARCHAR(128)
+                  remarks: 关联的任务ID（可选）
+              - column:
+                  name: task_type
+                  type: VARCHAR(128)
+                  remarks: 任务类型（可选，冗余便于查询）
+              - column:
+                  name: turn_index
+                  type: INT
+                  remarks: 轮次索引，同一session内递增
+                  defaultValueNumeric: 0
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  remarks: 租户ID
+              - column:
+                  name: create_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: update_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: deleted
+                  type: TINYINT
+                  defaultValueNumeric: 0
+        - createIndex:
+            tableName: ai_chat_message
+            indexName: idx_session_id
+            columns:
+              - column:
+                  name: session_id
+              - column:
+                  name: create_time
+        - createIndex:
+            tableName: ai_chat_message
+            indexName: idx_task_id
+            columns:
+              - column:
+                  name: task_id

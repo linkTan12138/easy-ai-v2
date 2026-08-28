@@ -72,6 +72,8 @@ public class DefaultValidationEngine implements ValidationEngine {
             return;
         }
 
+        String extractReason = extraction.getReason();
+
         for (Map.Entry<String, Object> entry : extracted.entrySet()) {
             String fieldCode = entry.getKey();
             Object rawValue = entry.getValue();
@@ -91,7 +93,7 @@ public class DefaultValidationEngine implements ValidationEngine {
 
             FieldContext fieldContext = buildFieldContext(field, state, context);
             ValidationResult result = validateField(field, rawValue, fieldContext);
-            applyResult(field, rawValue, result, state);
+            applyResult(field, rawValue, result, state, extractReason);
 
             if (!result.isValid() && isBlock(field)) {
                 log.warn("[ValidationEngine] field '{}' failed with onFail=BLOCK, task {} marked FAILED",
@@ -171,7 +173,8 @@ public class DefaultValidationEngine implements ValidationEngine {
     private void applyResult(FieldDefinition field,
                              Object rawValue,
                              ValidationResult result,
-                             TaskState state) {
+                             TaskState state,
+                             String extractReason) {
         FieldState existing = state.getField(field.getCode());
         FieldState.FieldStateBuilder builder = existing != null
                 ? existing.toBuilder()
@@ -183,6 +186,7 @@ public class DefaultValidationEngine implements ValidationEngine {
                     .value(result.getValue())
                     .displayValue(result.getDisplayValue())
                     .data(result.getData())
+                    .extractReason(extractReason)
                     .errorCode(null)
                     .errorMessage(null);
         } else {
@@ -190,6 +194,7 @@ public class DefaultValidationEngine implements ValidationEngine {
                     .rawValue(rawValue)
                     .value(null)
                     .data(null)
+                    .extractReason(extractReason)
                     .errorCode(result.getErrorCode())
                     .errorMessage(result.getMessage());
         }
