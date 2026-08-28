@@ -1,6 +1,6 @@
 # Easy-AI Starter
 
-> 一个 AI 驱动的多轮对话参数收集框架，让业务系统快速具备"对话式收集参数 → 自动执行业务动作"的能力。
+> 一个 AI 驱动的多轮对话参数收集框架，让业务系统快速具备"对话式收集参数 → 自动执行业务任务"的能力。
 
 ## 目录
 
@@ -26,8 +26,9 @@
 | **多轮参数收集** | 渐进式收集业务参数，缺什么问什么，支持多轮对话 |
 | **字段校验** | 内置枚举校验、自定义校验器，实时反馈校验结果 |
 | **前置依赖** | 字段间依赖关系，A 字段收集完成后才追问 B 字段 |
-| **Action 执行** | 参数收集完成后自动执行业务动作，返回结果 |
-| **PostAction** | Action 执行后的钩子（日志、通知、审计等），best-effort 模式 |
+| **任务执行** | 参数收集完成后自动执行业务任务，返回结果 |
+| **后置任务** | 任务执行后的钩子（日志、通知、审计等），best-effort 模式 |
+| **纯动作场景** | 无需参数收集的场景，只需定义 `@AiTask` 即可 |
 | **会话管理** | 会话绑定任务，支持重置、取消、超时清理 |
 | **状态持久化** | 任务状态数据库持久化，重启可恢复，支持乐观锁并发控制 |
 
@@ -41,8 +42,8 @@
 | **雪花算法 ID** | 全局唯一任务 ID |
 | **SSE 流式输出** | 支持 Server-Sent Events 流式返回 |
 | **对话历史** | 滑动窗口保留最近 N 轮对话，提升多轮上下文理解 |
-| **注解驱动** | `@AiTask` + `@AiField` 声明式配置，零 XML |
-| **动态功能介绍** | 自动扫描所有 Action，生成功能清单，无需硬编码 |
+| **注解驱动** | `@AiTask` + `@AiTaskParam` + `@AiField` 声明式配置，零 XML |
+| **动态功能介绍** | 自动扫描所有 Task，生成功能清单，无需硬编码 |
 
 ---
 
@@ -71,16 +72,16 @@
 └────┬────┘ └────┬────┘
      │           │
      └─────┬─────┘
-           │ 全部收集完成
+           │ 全部收集完成（或纯动作场景直接执行）
            ▼
     ┌──────────────┐
-    │  Action 执行  │  执行业务动作
-    │  ActionExec  │
+    │  Task 执行    │  执行业务任务
+    │  TaskExec    │
     └──────┬───────┘
            │
            ▼
     ┌──────────────┐
-    │ PostAction   │  日志/通知/审计（best-effort）
+    │ PostTask     │  日志/通知/审计（best-effort）
     └──────────────┘
 ```
 
@@ -133,7 +134,7 @@ easy-ai:
   task-engine:
     enabled: true
     annotation:
-      enabled: true   # 开启 @AiTask 注解扫描
+      enabled: true   # 开启注解扫描
 
 # 大模型配置（三选一，通过 active 切换）
 large-language-model:
@@ -163,35 +164,60 @@ large-language-model:
 
 ## 核心注解
 
-### @AiTask — 声明任务
+### @AiTask — 声明任务（标注在执行器类上）
 
-标注在 DTO 类上，定义一个 AI 任务：
+标注在 `TaskExecutor` 实现类上，定义一个 AI 任务的元信息：
+
+```java
+@AiTask(
+    value = "CREATE_ORDER",
+    name = "创建订单",
+    description = "通过对话收集订单信息并创建订单",
+    triggers = {"创建订单", "下单", "我要买"},
+    postActions = {"LOG"}
+)
+public class CreateOrderTask implements TaskExecutor {
+
+    @Override
+    public String type() {
+        return "CREATE_ORDER";
+    }
+
+    @Override
+    public TaskResult execute(ExecuteContext context) {
+        Map<String, Object> params = context.getParameters();
+        // 执行业务逻辑...
+        return TaskResult.success("订单创建成功！订单号：" + orderNo, result);
+    }
+}
+```
+
+| 属性 | 说明 |
+|------|------|
+| `value` / `type` | 任务唯一标识，必须与 `type()` 方法返回值一致 |
+| `name` | 任务名称（用户可见，用于功能介绍） |
+| `description` | 任务描述（用户可见，用于功能介绍和意图识别） |
+| `triggers` | 触发词，同时作为意图识别的关键词和示例 |
+| `postActions` | 后置任务名称列表 |
+| `hidden` | 是否在功能介绍中隐藏，默认 false |
+
+> **纯动作场景**：如果任务不需要收集参数（如"查询物流"），只需定义 `@AiTask` 即可，无需 `@AiTaskParam` DTO。
+
+### @AiTaskParam — 声明参数收集（标注在 DTO 类上）
+
+标注在参数 DTO 类上，通过 `type` 与 `@AiTask` 一对一关联：
 
 ```java
 @Data
-@AiTask(
-    type = "CREATE_ORDER",
-    name = "创建订单",
-    description = "通过对话收集订单信息并创建订单",
-    action = CreateOrderAction.class,
-    postActions = {"LOG"},
-    keywords = {"创建订单", "下单", "我要买"},
-    examples = {"我要创建一个订单", "帮我下单"}
-)
-public class CreateOrderTask {
+@AiTaskParam(type = "CREATE_ORDER")
+public class CreateOrderParam {
     // 字段定义见 @AiField
 }
 ```
 
 | 属性 | 说明 |
 |------|------|
-| `type` | 任务唯一标识 |
-| `name` | 任务名称（用户可见） |
-| `description` | 任务描述 |
-| `action` | 业务 Action 执行器类 |
-| `postActions` | PostAction 名称列表 |
-| `keywords` | 意图识别关键词 |
-| `examples` | 用户表达方式示例（传给 LLM 辅助分类） |
+| `type` | 关联的任务类型，必须与某个 `@AiTask.value()` 一致 |
 
 ### @AiField — 声明字段
 
@@ -201,8 +227,7 @@ public class CreateOrderTask {
 @AiField(
     name = "订单类型",
     description = "订单的类型",
-    required = true,
-    order = 1
+    required = true
 )
 private String orderType;
 ```
@@ -211,14 +236,14 @@ private String orderType;
 |------|------|
 | `name` | 字段名称（用户可见） |
 | `description` | 字段描述（传给 LLM 辅助提取） |
-| `required` | 是否必填，默认 true |
-| `order` | 收集顺序，数字越小越先收集 |
+| `required` | 是否必填，默认 false |
+| `normalize` | 归一化器类型 |
 
 ### @AiValid — 字段校验
 
 ```java
 @AiField(name = "手机号")
-@AiValid(validator = PhoneValidator.class)
+@AiValid(by = PhoneValidator.class)
 private String phone;
 ```
 
@@ -230,32 +255,18 @@ private String phone;
 private String description;
 ```
 
-### @AiAction — 业务动作
+### @AiPostTask — 后置任务
 
 ```java
-@AiAction(
-    value = "CREATE_ORDER_ACTION",
-    name = "创建订单",
-    description = "根据收集的参数创建订单",
-    triggers = {"创建订单", "下单"}
-)
-public class CreateOrderAction implements ActionExecutor {
+@AiPostTask("LOG")
+public class LogPostTask implements PostTaskExecutor {
     @Override
-    public ActionResult execute(ActionContext context) {
-        Map<String, Object> params = context.getParameters();
-        // 执行业务逻辑...
-        return ActionResult.success("订单创建成功！订单号：" + orderNo, result);
+    public String type() {
+        return "LOG";
     }
-}
-```
 
-### @AiPostAction — 后置动作
-
-```java
-@AiPostAction("LOG")
-public class LogPostAction implements PostActionExecutor {
     @Override
-    public void execute(ActionContext context) {
+    public void execute(ExecuteContext context) {
         log.info("操作日志: taskId={}, params={}", context.getTaskId(), context.getParameters());
     }
 }
@@ -267,41 +278,61 @@ public class LogPostAction implements PostActionExecutor {
 
 以"创建客服工单"场景为例：
 
-### 1. 定义任务 DTO
+### 1. 定义任务执行器
+
+```java
+@AiTask(
+    value = "CREATE_TICKET",
+    name = "创建工单",
+    description = "通过多轮对话收集工单信息并创建工单",
+    triggers = {"创建工单", "我要投诉", "我要建议"},
+    postActions = {"LOG"}
+)
+public class CreateTicketTask implements TaskExecutor {
+
+    @Override
+    public String type() {
+        return "CREATE_TICKET";
+    }
+
+    @Override
+    public TaskResult execute(ExecuteContext context) {
+        Map<String, Object> params = context.getParameters();
+        String ticketNo = "TK" + System.currentTimeMillis();
+        // 调用业务 Service 创建工单...
+        return TaskResult.success("工单已创建成功！工单编号：" + ticketNo,
+                Map.of("ticketNo", ticketNo));
+    }
+}
+```
+
+### 2. 定义参数 DTO
 
 ```java
 @Data
-@AiTask(
-    type = "CREATE_TICKET",
-    name = "创建工单",
-    description = "通过多轮对话收集工单信息并创建工单",
-    action = CreateTicketAction.class,
-    postActions = {"LOG"},
-    keywords = {"创建工单", "投诉", "建议", "咨询"},
-    examples = {"我要投诉", "帮我创建一个工单"}
-)
-public class CreateTicketTask {
+@AiTaskParam(type = "CREATE_TICKET")
+public class CreateTicketParam {
 
-    @AiField(name = "工单类型", description = "工单类型：咨询/投诉/建议", order = 1)
+    @AiField(name = "工单类型(咨询/投诉/建议)", required = true)
     private TicketType ticketType;  // 枚举字段自动校验
 
-    @AiField(name = "客户姓名", order = 2)
+    @AiField(name = "客户姓名", required = true)
     private String customerName;
 
-    @AiField(name = "联系电话", order = 3)
-    @AiValid(validator = PhoneValidator.class)
+    @AiField(name = "联系电话", required = true)
+    @AiValid(by = PhoneValidator.class)
     private String phone;
 
-    @AiField(name = "问题描述", order = 4)
+    @AiField(name = "问题描述", required = true)
     @AiDependsOn("ticketType")
     private String description;
 
-    @AiField(name = "优先级", required = false, order = 5)
+    @AiField(name = "优先级", required = false)
     private Priority priority;  // 非必填枚举
 }
 ```
 
-### 2. 定义枚举
+### 3. 定义枚举
 
 ```java
 public enum TicketType {
@@ -314,11 +345,16 @@ public enum TicketType {
 }
 ```
 
-### 3. 自定义校验器
+### 4. 自定义校验器
 
 ```java
 @Component
 public class PhoneValidator implements FieldValidator {
+    @Override
+    public String type() {
+        return "PHONE";
+    }
+
     @Override
     public ValidationResult validate(Object value, Map<String, Object> context) {
         String phone = String.valueOf(value);
@@ -326,26 +362,6 @@ public class PhoneValidator implements FieldValidator {
             return ValidationResult.ok(phone);  // 可返回标准化后的值
         }
         return ValidationResult.fail("手机号格式不正确，请输入11位手机号");
-    }
-}
-```
-
-### 4. 定义 Action
-
-```java
-@AiAction(
-    value = "CREATE_TICKET_ACTION",
-    name = "创建工单",
-    description = "根据收集的字段创建客服工单",
-    triggers = {"创建工单", "我要投诉"}
-)
-public class CreateTicketAction implements ActionExecutor {
-    @Override
-    public ActionResult execute(ActionContext context) {
-        Map<String, Object> params = context.getParameters();
-        String ticketNo = "TK" + System.currentTimeMillis();
-        // 调用业务 Service 创建工单...
-        return ActionResult.success("工单已创建成功！工单编号：" + ticketNo, Map.of("ticketNo", ticketNo));
     }
 }
 ```
@@ -392,6 +408,32 @@ AI: 请提供您的联系电话
 AI: 请描述您的问题
 用户: 问题是物流太慢了
 AI: 工单已创建成功！工单编号：TK123456789
+```
+
+### 7. 纯动作场景示例
+
+无需参数收集的场景，只需定义 Task：
+
+```java
+@AiTask(
+    value = "LOGISTICS_QUERY",
+    name = "物流查询",
+    description = "查询订单物流状态和配送进度",
+    triggers = {"物流", "查物流", "快递到哪了"}
+)
+public class LogisticsQueryTask implements TaskExecutor {
+
+    @Override
+    public String type() {
+        return "LOGISTICS_QUERY";
+    }
+
+    @Override
+    public TaskResult execute(ExecuteContext context) {
+        // 直接执行，无需参数收集
+        return TaskResult.success("当前物流状态：已发货，预计明天送达", null);
+    }
+}
 ```
 
 ---
@@ -555,15 +597,15 @@ llm:
 
 框架内置 `FEATURE_INTRO` 任务，当用户问"你能做什么"、"有什么功能"时自动触发。
 
-**动态扫描**所有已注册的 `@AiAction`，读取 `name` / `description` / `triggers` 元信息，实时生成功能清单。新增业务动作时无需修改任何代码。
+**动态扫描**所有已注册的 `@AiTask`（非 hidden），读取 `name` / `description` / `triggers` 元信息，实时生成功能清单。新增业务任务时无需修改任何代码。
 
-标注了 `hidden = true` 的 Action 不会出现在列表中。
+标注了 `hidden = true` 的 Task 不会出现在列表中。
 
 ```
 用户: 你能做什么
 AI: 本系统是一个 AI 驱动的业务助手，目前支持以下功能：
-1. 创建工单：根据收集的字段创建客服工单
-2. 创建订单：通过对话收集订单信息并创建订单
+1. 创建工单：通过多轮对话收集工单信息并创建工单
+2. 物流查询：查询订单物流状态和配送进度
 
 您可以直接告诉我要做什么，我会通过对话收集所需信息并自动执行。
 ```
@@ -589,7 +631,8 @@ AI: 本系统是一个 AI 驱动的业务助手，目前支持以下功能：
 | `completed` | 任务是否完成 |
 | `needMore` | 是否需要更多信息 |
 | `clarification` | 是否是澄清提问 |
-| `actionResult` | Action 执行结果（完成时） |
+| `taskResult` | 任务执行结果（完成时） |
+| `taskState` | 当前任务状态 |
 
 ---
 
@@ -597,7 +640,7 @@ AI: 本系统是一个 AI 驱动的业务助手，目前支持以下功能：
 
 ### Q: 意图识别不准确怎么办？
 
-A: 可以在 `@AiTask` 的 `keywords` 和 `examples` 中补充更多用户表达方式。LLM 分类优先，关键词作为降级兜底。
+A: 可以在 `@AiTask` 的 `triggers` 中补充更多用户表达方式。LLM 分类优先，关键词作为降级兜底。
 
 ### Q: 如何调试 LLM 调用？
 
@@ -615,6 +658,10 @@ A: 目前支持 MySQL，通过 Liquibase 自动管理表结构。
 ### Q: 如何添加新的 LLM 模型？
 
 A: 实现 `LLMProvider` 接口，或直接使用 `openai_compatible` 通用 Provider（只要提供 OpenAI 兼容的 `/chat/completions` 接口）。
+
+### Q: 纯动作场景（不需要参数）怎么定义？
+
+A: 只需标注 `@AiTask` 并实现 `TaskExecutor` 即可，不需要 `@AiTaskParam` DTO。框架识别到任务后会直接执行，跳过参数收集阶段。
 
 ---
 
