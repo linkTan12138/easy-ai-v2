@@ -204,6 +204,16 @@ public class AnnotationAiTaskConfigService implements AiTaskConfigService,
 
     // ---- Read routing: annotation first, database fallback ----
 
+    /**
+     * 获取所有注解配置的任务（用于功能介绍等场景）。
+     *
+     * @return 不可变的任务配置映射（taskType → config）
+     */
+    public Map<String, AiTaskConfig> getAllAnnotationConfigs() {
+        ensureInitialized();
+        return Collections.unmodifiableMap(annotationConfigs);
+    }
+
     @Override
     public AiTaskConfig getLatestPublished(String taskType) {
         ensureInitialized();

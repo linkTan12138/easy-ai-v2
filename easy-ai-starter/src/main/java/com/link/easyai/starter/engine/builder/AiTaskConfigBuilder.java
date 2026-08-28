@@ -133,10 +133,6 @@ public class AiTaskConfigBuilder {
             }
         }
 
-        if (fields.isEmpty()) {
-            errors.add("@AiTask 类没有任何实例字段: " + taskClass.getName());
-        }
-
         // Cross-field validation: dependsOn references
         for (FieldDefinition definition : fields) {
             validateDependsOn(taskClass, definition, codes, errors);

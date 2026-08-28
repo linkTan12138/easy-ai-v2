@@ -1,16 +1,16 @@
 package com.link.easyai.starter.engine.action.builtin;
 
+import com.link.easyai.starter.engine.AnnotationAiTaskConfigService;
 import com.link.easyai.starter.engine.action.ActionExecutor;
-import com.link.easyai.starter.engine.action.ActionRegistry;
 import com.link.easyai.starter.engine.action.ActionResult;
 import com.link.easyai.starter.engine.action.AiAction;
+import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.context.ActionContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,12 +19,12 @@ import java.util.Map;
  * 框架内置：功能介绍业务动作（type = FEATURE_INTRO）。
  * <p>
  * 当用户询问系统能力、使用方式、支持哪些操作时触发。
- * <strong>不硬编码功能清单</strong>，而是动态扫描 {@link ActionRegistry} 中
- * 所有已注册的 {@link ActionExecutor}，读取其 {@link AiAction} 注解上的
- * name / description / triggers 元信息，实时生成功能列表。
+ * <strong>不硬编码功能清单</strong>，而是动态扫描所有 {@link AiTaskConfig}
+ * （来自 {@code @AiTask} 注解），读取其 name / description / keywords 元信息，
+ * 实时生成功能列表。
  * <p>
- * 新增业务动作时只需在 {@code @AiAction} 上填写元信息，无需修改本类。
- * 标注了 {@code hidden = true} 的动作（如本类自身、内置演示动作）不会出现在列表中。
+ * 新增业务场景时只需在 {@code @AiTask} 上填写元信息，无需修改本类。
+ * 内置任务（如本类自身）不会出现在列表中。
  * <p>
  * 可选字段 {@code interestTopic}（想了解的功能方向）由映射引擎传入，
  * 若用户指定了具体方向则聚焦介绍，否则返回全量功能清单。
@@ -34,11 +34,14 @@ public class FeatureIntroAction implements ActionExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(FeatureIntroAction.class);
 
-    private final ActionRegistry actionRegistry;
+    /** 内置任务类型，不出现在功能列表中 */
+    private static final List<String> BUILTIN_TASK_TYPES = List.of("FEATURE_INTRO");
+
+    private final AnnotationAiTaskConfigService configService;
 
     @Autowired
-    public FeatureIntroAction(ActionRegistry actionRegistry) {
-        this.actionRegistry = actionRegistry;
+    public FeatureIntroAction(AnnotationAiTaskConfigService configService) {
+        this.configService = configService;
     }
 
     @Override
@@ -55,7 +58,7 @@ public class FeatureIntroAction implements ActionExecutor {
                 ? String.valueOf(params.get("interestTopic")).trim()
                 : null;
 
-        // 动态加载所有可见动作的元信息
+        // 动态加载所有可见任务的元信息
         List<FeatureMeta> features = loadVisibleFeatures();
 
         String message = buildIntroMessage(interestTopic, features);
@@ -76,42 +79,32 @@ public class FeatureIntroAction implements ActionExecutor {
     }
 
     /**
-     * 从 ActionRegistry 动态加载所有非 hidden 动作的元信息。
+     * 从所有 @AiTask 注解配置中动态加载非内置任务的元信息。
      */
     private List<FeatureMeta> loadVisibleFeatures() {
         List<FeatureMeta> result = new ArrayList<>();
-        for (ActionExecutor executor : actionRegistry.getAllActions()) {
-            AiAction annotation = resolveAnnotation(executor);
-            if (annotation == null) {
-                log.debug("[FeatureIntroAction] executor {} has no @AiAction annotation, skipped",
-                        executor.getClass().getName());
-                continue;
-            }
-            if (annotation.hidden()) {
-                continue;
-            }
-            String type = annotation.value();
-            String name = annotation.name().isBlank() ? type : annotation.name();
-            String description = annotation.description().isBlank()
-                    ? "（该动作暂未填写功能描述）" : annotation.description();
-            List<String> triggers = Arrays.asList(annotation.triggers());
-            result.add(new FeatureMeta(name, type, description, triggers));
-        }
-        log.info("[FeatureIntroAction] loaded {} visible features from registry", result.size());
-        return result;
-    }
+        Map<String, AiTaskConfig> configs = configService.getAllAnnotationConfigs();
 
-    /**
-     * 解析 ActionExecutor 实例上的 @AiAction 注解，兼容 CGLIB 代理子类。
-     */
-    private AiAction resolveAnnotation(ActionExecutor executor) {
-        Class<?> clazz = executor.getClass();
-        AiAction annotation = clazz.getAnnotation(AiAction.class);
-        if (annotation == null && clazz.getSuperclass() != null) {
-            // CGLIB 代理：注解在父类上
-            annotation = clazz.getSuperclass().getAnnotation(AiAction.class);
+        for (Map.Entry<String, AiTaskConfig> entry : configs.entrySet()) {
+            String taskType = entry.getKey();
+            AiTaskConfig config = entry.getValue();
+
+            // 跳过内置任务
+            if (BUILTIN_TASK_TYPES.contains(taskType)) {
+                continue;
+            }
+
+            String name = config.getName() != null && !config.getName().isBlank()
+                    ? config.getName() : taskType;
+            String description = config.getDescription() != null && !config.getDescription().isBlank()
+                    ? config.getDescription() : "（该任务暂未填写功能描述）";
+            List<String> triggers = config.getKeywords() != null ? config.getKeywords() : List.of();
+
+            result.add(new FeatureMeta(name, taskType, description, triggers));
         }
-        return annotation;
+
+        log.info("[FeatureIntroAction] loaded {} visible features from task configs", result.size());
+        return result;
     }
 
     /**
@@ -119,7 +112,7 @@ public class FeatureIntroAction implements ActionExecutor {
      */
     private String buildIntroMessage(String interestTopic, List<FeatureMeta> features) {
         if (features.isEmpty()) {
-            return "当前系统暂未注册任何业务功能。请联系管理员配置 @AiAction 动作。";
+            return "当前系统暂未配置任何业务功能。请联系管理员添加 @AiTask 任务。";
         }
 
         if (interestTopic == null || interestTopic.isBlank()) {
@@ -160,6 +153,6 @@ public class FeatureIntroAction implements ActionExecutor {
                 + buildIntroMessage(null, features);
     }
 
-    /** 功能项内部描述结构（从 @AiAction 注解动态提取）。 */
+    /** 功能项内部描述结构（从 @AiTask 注解动态提取）。 */
     private record FeatureMeta(String name, String type, String description, List<String> triggers) {}
 }
