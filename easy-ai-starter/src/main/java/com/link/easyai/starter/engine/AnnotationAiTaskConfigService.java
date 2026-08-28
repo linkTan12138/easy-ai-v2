@@ -1,12 +1,17 @@
 package com.link.easyai.starter.engine;
 
 import com.link.easyai.starter.domain.entity.AiTaskConfigRecord;
+import com.link.easyai.starter.engine.annotation.AiTaskParam;
 import com.link.easyai.starter.engine.builder.AiAnnotationScanner;
 import com.link.easyai.starter.engine.builder.AiBeanResolver;
 import com.link.easyai.starter.engine.builder.AiTaskConfigBuilder;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
+import com.link.easyai.starter.engine.config.CompletionConfig;
+import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.exception.ConfigNotFoundException;
 import com.link.easyai.starter.engine.exception.ConfigValidationException;
+import com.link.easyai.starter.engine.task.AiTask;
+import com.link.easyai.starter.engine.task.TaskExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -59,8 +64,8 @@ public class AnnotationAiTaskConfigService implements AiTaskConfigService,
 
     private static final Logger log = LoggerFactory.getLogger(AnnotationAiTaskConfigService.class);
 
-    /** 框架内置 @AiTask 配置所在的包，始终扫描，不依赖用户的 base-packages 配置。 */
-    private static final String BUILTIN_CONFIG_PACKAGE = "com.link.easyai.starter.engine.config.builtin";
+    /** 框架内置 @AiTask 执行器所在的包，始终扫描，不依赖用户的 base-packages 配置。 */
+    private static final String BUILTIN_TASK_PACKAGE = "com.link.easyai.starter.engine.task.builtin";
 
     private final AiAnnotationScanner scanner;
     private final AiTaskConfigBuilder builder;
@@ -111,6 +116,7 @@ public class AnnotationAiTaskConfigService implements AiTaskConfigService,
     }
 
     /** Caller must hold the monitor. All-or-nothing: no partial caches on error. */
+    @SuppressWarnings("unchecked")
     private void buildAllConfigs() {
         if (initialized) {
             return;
@@ -119,32 +125,63 @@ public class AnnotationAiTaskConfigService implements AiTaskConfigService,
         String[] basePackages = resolveBasePackages();
         // 合并用户配置的扫描包与框架内置包（内置功能场景始终可用，不依赖用户配置）
         List<String> allPackages = new ArrayList<>(Arrays.asList(basePackages));
-        if (!allPackages.contains(BUILTIN_CONFIG_PACKAGE)) {
-            allPackages.add(BUILTIN_CONFIG_PACKAGE);
+        if (!allPackages.contains(BUILTIN_TASK_PACKAGE)) {
+            allPackages.add(BUILTIN_TASK_PACKAGE);
         }
-        List<Class<?>> taskClasses = scanner.scan(
+        String[] packages = allPackages.toArray(new String[0]);
+
+        // ---- 阶段一：扫描所有 @AiTask 执行器，构建基础配置 ----
+        List<Class<?>> executorClasses = scanner.scan(
                 applicationContext.getEnvironment(), applicationContext.getClassLoader(),
-                allPackages.toArray(new String[0]));
+                AiTask.class, packages);
 
         List<String> errors = new ArrayList<>();
         Map<String, AiTaskConfig> built = new LinkedHashMap<>();
         Map<String, Class<?>> sources = new LinkedHashMap<>();
 
-        for (Class<?> taskClass : taskClasses) {
+        for (Class<?> clazz : executorClasses) {
+            if (!TaskExecutor.class.isAssignableFrom(clazz)) {
+                errors.add("@AiTask 只能标注在 TaskExecutor 实现类上: " + clazz.getName());
+                continue;
+            }
             AiTaskConfig config;
             try {
-                config = builder.build(taskClass, beanResolver);
+                config = builder.buildBaseConfig((Class<? extends TaskExecutor>) clazz);
             } catch (ConfigValidationException e) {
                 errors.add(e.getMessage());
                 continue;
             }
-            Class<?> previous = sources.put(config.getTaskType(), taskClass);
+            Class<?> previous = sources.put(config.getTaskType(), clazz);
             if (previous != null) {
                 errors.add(String.format("taskType '%s' 重复声明: %s 与 %s",
-                        config.getTaskType(), previous.getName(), taskClass.getName()));
+                        config.getTaskType(), previous.getName(), clazz.getName()));
                 continue;
             }
             built.put(config.getTaskType(), config);
+        }
+
+        // ---- 阶段二：扫描所有 @AiTaskParam DTO，通过 type 匹配补充字段 ----
+        List<Class<?>> paramClasses = scanner.scan(
+                applicationContext.getEnvironment(), applicationContext.getClassLoader(),
+                AiTaskParam.class, packages);
+
+        for (Class<?> paramClass : paramClasses) {
+            AiTaskParam param = paramClass.getAnnotation(AiTaskParam.class);
+            String type = param.type();
+            AiTaskConfig config = built.get(type);
+            if (config == null) {
+                errors.add(String.format("@AiTaskParam '%s' 找不到对应的 @AiTask 执行器: %s",
+                        type, paramClass.getName()));
+                continue;
+            }
+            try {
+                List<FieldDefinition> fields = builder.buildFields(paramClass, beanResolver);
+                config.setFields(fields);
+                CompletionConfig completion = builder.buildCompletion(fields);
+                config.setCompletion(completion);
+            } catch (ConfigValidationException e) {
+                errors.add(e.getMessage());
+            }
         }
 
         if (!errors.isEmpty()) {

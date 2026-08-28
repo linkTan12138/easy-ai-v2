@@ -1,14 +1,12 @@
 package com.link.easyai.starter.engine.builder;
 
-import com.link.easyai.starter.engine.action.ActionExecutor;
 import com.link.easyai.starter.engine.annotation.AiDependsOn;
 import com.link.easyai.starter.engine.annotation.AiExtract;
 import com.link.easyai.starter.engine.annotation.AiField;
 import com.link.easyai.starter.engine.annotation.AiMapping;
-import com.link.easyai.starter.engine.annotation.AiTask;
+import com.link.easyai.starter.engine.annotation.AiTaskParam;
 import com.link.easyai.starter.engine.annotation.AiValid;
 import com.link.easyai.starter.engine.annotation.Mapping;
-import com.link.easyai.starter.engine.config.ActionConfig;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.config.CompletionConfig;
 import com.link.easyai.starter.engine.config.ExtractionConfig;
@@ -17,9 +15,12 @@ import com.link.easyai.starter.engine.config.MappingRule;
 import com.link.easyai.starter.engine.config.NormalizationConfig;
 import com.link.easyai.starter.engine.config.OptionDefinition;
 import com.link.easyai.starter.engine.config.PremiseConfig;
+import com.link.easyai.starter.engine.config.TaskExecuteConfig;
 import com.link.easyai.starter.engine.config.ValidationConfig;
 import com.link.easyai.starter.engine.config.ValidatorDefinition;
 import com.link.easyai.starter.engine.exception.ConfigValidationException;
+import com.link.easyai.starter.engine.task.AiTask;
+import com.link.easyai.starter.engine.task.TaskExecutor;
 import com.link.easyai.starter.engine.validation.FieldValidator;
 import com.link.easyai.starter.engine.validation.builtin.EnumValidator;
 import org.springframework.stereotype.Component;
@@ -34,31 +35,20 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Converts an {@link AiTask}-annotated DTO class into an
- * {@link AiTaskConfig} that the existing {@link com.link.easyai.starter.engine.AiTaskEngine}
- * consumes unchanged.
+ * 将 {@link AiTask} 注解的执行器类和 {@link AiTaskParam} 注解的参数 DTO 类
+ * 转换为 {@link AiTaskConfig}。
  * <p>
- * Convention over configuration — everything derivable from the Java class is
- * derived; annotations only override defaults:
- * <pre>
- * Java Field                 → code / type / order / options(枚举)
- * &#64;AiField                 → name / required / sensitive / normalize
- * &#64;AiExtract               → extraction (allowEmpty = !required)
- * &#64;AiValid                 → validation pipeline (枚举字段缺省自动追加 ENUM 校验器)
- * &#64;AiMapping               → mappings (缺省: 同名 target ← $value)
- * &#64;AiDependsOn             → premise (单依赖: exists 叶子; 多依赖: AND)
- * required 字段集合           → completion.requiredFields / optionalFields
- * &#64;AiTask.action            → action.type (Spring Bean 的 type())
- * </pre>
- * All structural problems (missing bean, bad mapping source, dangling
- * dependsOn reference, unsupported Java type, ...) are collected and reported
- * together as a single {@link ConfigValidationException} so a migration fails
- * fast at startup with the full picture.
+ * 两阶段构建：
+ * <ol>
+ *   <li>{@link #buildBaseConfig(Class)} — 从 @AiTask 执行器读取元信息（name/description/triggers/postActions）</li>
+ *   <li>{@link #buildFields(Class, AiBeanResolver)} — 从 @AiTaskParam DTO 读取字段定义</li>
+ * </ol>
+ * 纯动作场景（无参数）只有 @AiTask 执行器，没有 @AiTaskParam DTO，fields 为空。
  */
 @Component
 public class AiTaskConfigBuilder {
 
-    /** Annotation configs are immutable in code, so they are always version 1. */
+    /** 注解配置在代码中不可变，因此版本恒为 1。 */
     public static final int ANNOTATION_CONFIG_VERSION = 1;
 
     private static final String SOURCE_VALUE = "$value";
@@ -66,54 +56,81 @@ public class AiTaskConfigBuilder {
     private static final String SOURCE_DATA_PREFIX = "$data.";
 
     /**
-     * Build the config for one @AiTask class.
+     * 从 @AiTask 执行器类构建基础配置（元信息 + executeConfig）。
      *
-     * @param taskClass the DTO class annotated with @AiTask
-     * @param resolver  resolves validator / action classes into Spring beans
-     * @return the built config (taskType + version + fields + completion + action)
-     * @throws ConfigValidationException if the declaration is invalid
+     * @param executorClass 标注 @AiTask 的 TaskExecutor 实现类
+     * @return 基础配置（taskType/version/name/description/keywords/examples/executeConfig），fields 为空
      */
-    public AiTaskConfig build(Class<?> taskClass, AiBeanResolver resolver) {
-        AiTask task = taskClass.getAnnotation(AiTask.class);
+    public AiTaskConfig buildBaseConfig(Class<? extends TaskExecutor> executorClass) {
+        AiTask task = executorClass.getAnnotation(AiTask.class);
         if (task == null) {
             throw new ConfigValidationException(
-                    "类 " + taskClass.getName() + " 缺少 @AiTask 注解");
+                    "类 " + executorClass.getName() + " 缺少 @AiTask 注解");
         }
-        if (taskClass.isInterface() || taskClass.isEnum() || Modifier.isAbstract(taskClass.getModifiers())) {
+        if (executorClass.isInterface() || Modifier.isAbstract(executorClass.getModifiers())) {
             throw new ConfigValidationException(
-                    "@AiTask 只能标注在具体类上: " + taskClass.getName());
+                    "@AiTask 只能标注在具体类上: " + executorClass.getName());
         }
 
         List<String> errors = new ArrayList<>();
-
-        if (isBlank(task.type())) {
-            errors.add("@AiTask.type 不能为空: " + taskClass.getName());
-        }
-        if (isBlank(task.name())) {
-            errors.add("@AiTask.name 不能为空: " + taskClass.getName());
+        if (isBlank(task.value())) {
+            errors.add("@AiTask.value 不能为空: " + executorClass.getName());
         }
 
-        // Action: resolve the bean and read its type identifier
-        String actionType = null;
-        try {
-            ActionExecutor executor = resolver.resolve(task.action());
-            actionType = executor.type();
-            if (isBlank(actionType)) {
-                errors.add(String.format("@AiTask.action %s 的 type() 返回空: %s",
-                        task.action().getName(), taskClass.getName()));
-            }
-        } catch (RuntimeException e) {
-            errors.add(String.format("@AiTask.action %s 无法解析 (Bean 不存在?): %s",
-                    task.action().getName(), e.getMessage()));
+        if (!errors.isEmpty()) {
+            throw new ConfigValidationException(String.format(
+                    "@AiTask 配置校验失败: %s (%s): %s",
+                    task.value(), executorClass.getName(), String.join("; ", errors)));
         }
 
-        // Fields
+        TaskExecuteConfig executeConfig = TaskExecuteConfig.builder()
+                .type(task.value())
+                .postActions(task.postActions().length > 0 ? List.of(task.postActions()) : null)
+                .params(new LinkedHashMap<>())
+                .build();
+
+        // triggers 同时作为 keywords 和 examples 供意图识别使用
+        List<String> triggers = task.triggers().length > 0 ? List.of(task.triggers()) : null;
+
+        return AiTaskConfig.builder()
+                .taskType(task.value())
+                .version(ANNOTATION_CONFIG_VERSION)
+                .name(task.name().isBlank() ? task.value() : task.name())
+                .description(task.description())
+                .keywords(triggers)
+                .examples(triggers)
+                .fields(new ArrayList<>())
+                .executeConfig(executeConfig)
+                .build();
+    }
+
+    /**
+     * 从 @AiTaskParam DTO 类构建字段定义列表。
+     *
+     * @param paramClass 标注 @AiTaskParam 的参数 DTO 类
+     * @param resolver   解析校验器 Bean
+     * @return 字段定义列表
+     */
+    public List<FieldDefinition> buildFields(Class<?> paramClass, AiBeanResolver resolver) {
+        AiTaskParam param = paramClass.getAnnotation(AiTaskParam.class);
+        if (param == null) {
+            throw new ConfigValidationException(
+                    "类 " + paramClass.getName() + " 缺少 @AiTaskParam 注解");
+        }
+        if (paramClass.isInterface() || paramClass.isEnum() || Modifier.isAbstract(paramClass.getModifiers())) {
+            throw new ConfigValidationException(
+                    "@AiTaskParam 只能标注在具体类上: " + paramClass.getName());
+        }
+        if (isBlank(param.type())) {
+            throw new ConfigValidationException(
+                    "@AiTaskParam.type 不能为空: " + paramClass.getName());
+        }
+
+        List<String> errors = new ArrayList<>();
         List<FieldDefinition> fields = new ArrayList<>();
-        List<String> requiredFields = new ArrayList<>();
-        List<String> optionalFields = new ArrayList<>();
         Set<String> codes = new HashSet<>();
 
-        for (Field javaField : taskClass.getDeclaredFields()) {
+        for (Field javaField : paramClass.getDeclaredFields()) {
             if (Modifier.isStatic(javaField.getModifiers()) || javaField.isSynthetic()) {
                 continue;
             }
@@ -123,70 +140,61 @@ public class AiTaskConfigBuilder {
                 continue;
             }
 
-            // Convention: declaration order → field order (1-based)
-            FieldDefinition definition = buildFieldDefinition(task, javaField, fields.size() + 1, resolver, errors);
+            FieldDefinition definition = buildFieldDefinition(javaField, fields.size() + 1, resolver, errors);
             fields.add(definition);
-            if (definition.isRequired()) {
-                requiredFields.add(code);
-            } else {
-                optionalFields.add(code);
-            }
         }
 
-        // Cross-field validation: dependsOn references
+        // 跨字段校验：dependsOn 引用
         for (FieldDefinition definition : fields) {
-            validateDependsOn(taskClass, definition, codes, errors);
+            validateDependsOn(paramClass, definition, codes, errors);
         }
 
         if (!errors.isEmpty()) {
             throw new ConfigValidationException(String.format(
-                    "@AiTask 配置校验失败: %s (%s): %s",
-                    task.type(), taskClass.getName(), String.join("; ", errors)));
+                    "@AiTaskParam 配置校验失败: %s (%s): %s",
+                    param.type(), paramClass.getName(), String.join("; ", errors)));
         }
 
-        CompletionConfig completion = CompletionConfig.builder()
+        return fields;
+    }
+
+    /**
+     * 从字段列表构建 CompletionConfig（requiredFields / optionalFields）。
+     */
+    public CompletionConfig buildCompletion(List<FieldDefinition> fields) {
+        List<String> requiredFields = new ArrayList<>();
+        List<String> optionalFields = new ArrayList<>();
+        for (FieldDefinition field : fields) {
+            if (field.isRequired()) {
+                requiredFields.add(field.getCode());
+            } else {
+                optionalFields.add(field.getCode());
+            }
+        }
+        return CompletionConfig.builder()
                 .requiredFields(requiredFields)
                 .optionalFields(optionalFields)
-                .build();
-
-        ActionConfig action = ActionConfig.builder()
-                .type(actionType)
-                .postActions(task.postActions().length > 0 ? List.of(task.postActions()) : null)
-                .params(new LinkedHashMap<>())
-                .build();
-
-        return AiTaskConfig.builder()
-                .taskType(task.type())
-                .version(ANNOTATION_CONFIG_VERSION)
-                .name(task.name())
-                .description(task.description())
-                .keywords(task.keywords().length > 0 ? List.of(task.keywords()) : null)
-                .examples(task.examples().length > 0 ? List.of(task.examples()) : null)
-                .fields(fields)
-                .completion(completion)
-                .action(action)
                 .build();
     }
 
     /**
-     * Build one FieldDefinition from a Java field + its annotations.
+     * 从 Java 字段 + 注解构建一个 FieldDefinition。
      *
-     * @param order 1-based declaration order within the task class
+     * @param order 字段在类中的声明顺序（从1开始）
      */
-    private FieldDefinition buildFieldDefinition(AiTask task,
-                                                 Field javaField,
+    private FieldDefinition buildFieldDefinition(Field javaField,
                                                  int order,
                                                  AiBeanResolver resolver,
                                                  List<String> errors) {
         String code = javaField.getName();
         AiField aiField = javaField.getAnnotation(AiField.class);
 
-        // ---- code / name / required / sensitive (convention first) ----
+        // ---- code / name / required / sensitive（约定优先）----
         String name = aiField != null && !isBlank(aiField.name()) ? aiField.name().trim() : code;
         boolean required = aiField != null && aiField.required();
         boolean sensitive = aiField != null && aiField.sensitive();
 
-        // ---- type (Java type derivation, incl. enum options) ----
+        // ---- type（Java 类型推导，含枚举选项）----
         FieldTypeResolver.Resolution resolution;
         try {
             resolution = FieldTypeResolver.resolve(javaField);
@@ -203,7 +211,7 @@ public class AiTaskConfigBuilder {
                     .description(extract.description())
                     .examples(List.of(extract.examples()))
                     .rules(List.of(extract.rules()))
-                    // Convention: an optional field may be absent from the LLM output
+                    // 约定：可选字段允许 LLM 输出中缺失
                     .allowEmpty(!required)
                     .build();
         }
@@ -228,9 +236,7 @@ public class AiTaskConfigBuilder {
                 }
             }
         } else if (resolution != null && resolution.isEnum()) {
-            // Convention: enum fields automatically get the ENUM validator
-            // (label -> value conversion against the generated options);
-            // an explicit @AiValid overrides this default entirely.
+            // 约定：枚举字段自动追加 ENUM 校验器
             try {
                 FieldValidator enumValidator = resolver.resolve(EnumValidator.class);
                 validators.add(ValidatorDefinition.builder().type(enumValidator.type()).build());
@@ -243,7 +249,7 @@ public class AiTaskConfigBuilder {
                 ? null
                 : ValidationConfig.builder().validators(validators).build();
 
-        // ---- premise (simple dependency) ----
+        // ---- premise（简单依赖）----
         AiDependsOn dependsOn = javaField.getAnnotation(AiDependsOn.class);
         PremiseConfig premise = buildPremise(dependsOn);
 
@@ -278,7 +284,7 @@ public class AiTaskConfigBuilder {
                 mappings = null;
             }
         } else {
-            // Convention: map the field value to the same-named target
+            // 约定：字段值映射到同名 target
             mappings = List.of(MappingRule.builder().target(code).source(SOURCE_VALUE).build());
         }
 
@@ -299,9 +305,8 @@ public class AiTaskConfigBuilder {
     }
 
     /**
-     * Build the premise config from @AiDependsOn:
-     * single dependency → a bare "exists" leaf (identical to legacy DB JSON);
-     * multiple dependencies → an AND group of "exists" leaves.
+     * 从 @AiDependsOn 构建 premise 配置：
+     * 单依赖 → 裸 "exists" 叶子；多依赖 → AND 组合。
      */
     private PremiseConfig buildPremise(AiDependsOn dependsOn) {
         if (dependsOn == null || dependsOn.value().length == 0) {
@@ -321,16 +326,16 @@ public class AiTaskConfigBuilder {
         return PremiseConfig.builder().field(field).conditionOperator("exists").build();
     }
 
-    private void validateDependsOn(Class<?> taskClass,
+    private void validateDependsOn(Class<?> paramClass,
                                    FieldDefinition definition,
                                    Set<String> codes,
                                    List<String> errors) {
         AiDependsOn dependsOn = null;
         try {
-            Field javaField = taskClass.getDeclaredField(definition.getCode());
+            Field javaField = paramClass.getDeclaredField(definition.getCode());
             dependsOn = javaField.getAnnotation(AiDependsOn.class);
         } catch (NoSuchFieldException ignored) {
-            // cannot happen — the definition was built from this field
+            // 不可能发生 — definition 就是从这个字段构建的
         }
         if (dependsOn == null) {
             return;
@@ -358,10 +363,8 @@ public class AiTaskConfigBuilder {
     }
 
     /**
-     * Source must be one of: $value / $rawValue / $data.xxx (non-blank key,
-     * no whitespace) / a literal constant (no $ prefix). Any other $-prefixed
-     * expression is rejected — it is almost certainly a typo that would
-     * otherwise silently map to null.
+     * source 必须是：$value / $rawValue / $data.xxx / 字面量常量。
+     * 其他 $ 前缀的表达式会被拒绝（几乎肯定是拼写错误）。
      */
     private String validateSource(String source) {
         if (isBlank(source)) {
@@ -384,7 +387,7 @@ public class AiTaskConfigBuilder {
         if (expr.startsWith("$")) {
             return "无法识别的表达式: " + expr + "（支持 $value / $rawValue / $data.xxx 或字面量）";
         }
-        return null; // literal constant
+        return null; // 字面量常量
     }
 
     private boolean isBlank(String s) {

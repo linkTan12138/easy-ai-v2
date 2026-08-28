@@ -1,6 +1,5 @@
 package com.link.easyai.starter.engine.builder;
 
-import com.link.easyai.starter.engine.annotation.AiTask;
 import com.link.easyai.starter.engine.exception.ConfigValidationException;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -11,31 +10,35 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ClassUtils;
 
+import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 /**
- * Classpath scanner that finds every class annotated with {@link AiTask}.
+ * 类路径扫描器，查找标注了指定注解的所有类。
  * <p>
- * Unlike the default {@link ClassPathScanningCandidateComponentProvider} behaviour,
- * interfaces / abstract classes / enums carrying {@code @AiTask} are also returned
- * (deduplicated by class name) so that {@link AiTaskConfigBuilder} can reject them
- * with a precise error at startup instead of silently ignoring a broken declaration.
+ * 与默认行为不同，接口/抽象类/枚举也会被返回（按类名去重），
+ * 以便 {@link AiTaskConfigBuilder} 在启动时给出精确的错误信息，
+ * 而不是静默忽略错误声明。
  */
 @Component
 public class AiAnnotationScanner {
 
     /**
-     * Scan the given base packages for {@code @AiTask} classes.
+     * 扫描指定包，查找标注了 {@code annotationType} 的类。
      *
-     * @param environment the Spring environment (used for @Profile-aware filtering)
-     * @param classLoader the classloader to load scanned classes with
-     * @param basePackages packages to scan; empty input yields an empty result
-     * @return deduplicated classes annotated with @AiTask (never null)
+     * @param environment    Spring 环境（用于 @Profile 过滤）
+     * @param classLoader    加载扫描到的类的类加载器
+     * @param annotationType 要扫描的注解类型
+     * @param basePackages   要扫描的包；空输入返回空结果
+     * @return 去重后的标注类列表（永不为 null）
      */
-    public List<Class<?>> scan(Environment environment, ClassLoader classLoader, String... basePackages) {
+    public List<Class<?>> scan(Environment environment,
+                               ClassLoader classLoader,
+                               Class<? extends Annotation> annotationType,
+                               String... basePackages) {
         if (basePackages == null || basePackages.length == 0) {
             return List.of();
         }
@@ -44,13 +47,12 @@ public class AiAnnotationScanner {
                 new ClassPathScanningCandidateComponentProvider(false, environment) {
                     @Override
                     protected boolean isCandidateComponent(AnnotatedBeanDefinition beanDefinition) {
-                        // Accept everything matched by the @AiTask include filter —
-                        // structural problems (interface/abstract/enum) are reported
-                        // by AiTaskConfigBuilder with actionable messages.
+                        // 接受所有被注解过滤器匹配的类 — 结构问题（接口/抽象/枚举）
+                        // 由 AiTaskConfigBuilder 给出可操作的错误信息。
                         return true;
                     }
                 };
-        provider.addIncludeFilter(new AnnotationTypeFilter(AiTask.class));
+        provider.addIncludeFilter(new AnnotationTypeFilter(annotationType));
         provider.setResourceLoader(new DefaultResourceLoader(classLoader));
 
         Set<Class<?>> classes = new LinkedHashSet<>();
@@ -65,7 +67,7 @@ public class AiAnnotationScanner {
                     classes.add(ClassUtils.forName(className, classLoader));
                 } catch (ClassNotFoundException e) {
                     throw new ConfigValidationException(
-                            "无法加载 @AiTask 类: " + className, e);
+                            "无法加载 @" + annotationType.getSimpleName() + " 类: " + className, e);
                 }
             }
         }

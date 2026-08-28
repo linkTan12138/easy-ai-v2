@@ -1,7 +1,7 @@
 package com.link.easyai.starter.engine;
 
-import com.link.easyai.starter.engine.action.ActionEngine;
-import com.link.easyai.starter.engine.action.ActionResult;
+import com.link.easyai.starter.engine.task.TaskExecuteEngine;
+import com.link.easyai.starter.engine.task.TaskResult;
 import com.link.easyai.starter.engine.completion.CompletionEngine;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.config.FieldDefinition;
@@ -63,7 +63,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
     private final NormalizationEngine normalizationEngine;
     private final MappingEngine mappingEngine;
     private final CompletionEngine completionEngine;
-    private final ActionEngine actionEngine;
+    private final TaskExecuteEngine taskExecuteEngine;
     private final ResponseBuilder responseBuilder;
     private final LargeLanguageModelHolder llmHolder;
     private final EngineMetrics metrics;
@@ -79,7 +79,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
                                NormalizationEngine normalizationEngine,
                                MappingEngine mappingEngine,
                                CompletionEngine completionEngine,
-                               ActionEngine actionEngine,
+                               TaskExecuteEngine taskExecuteEngine,
                                ResponseBuilder responseBuilder,
                                LargeLanguageModelHolder llmHolder,
                                EngineMetrics metrics,
@@ -93,7 +93,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         this.normalizationEngine = normalizationEngine;
         this.mappingEngine = mappingEngine;
         this.completionEngine = completionEngine;
-        this.actionEngine = actionEngine;
+        this.taskExecuteEngine = taskExecuteEngine;
         this.responseBuilder = responseBuilder;
         this.llmHolder = llmHolder;
         this.metrics = metrics;
@@ -231,7 +231,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
      * Execute the action and return the final response.
      */
     private AiTaskResponse executeAction(AiTaskConfig config, TaskState state, TaskContext taskContext) {
-        log.info("[AiTaskEngine] executing action: type={}", config.getAction().getType());
+        log.info("[AiTaskEngine] executing task: type={}", config.getExecuteConfig().getType());
         state.setStatus(TaskStatus.EXECUTING);
 
         // Assemble action parameters from field mapping
@@ -239,9 +239,9 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         log.debug("[AiTaskEngine] assembled parameters: {}", parameters);
 
         // Execute action + post-actions
-        ActionResult actionResult = actionEngine.execute(config, state, parameters, taskContext);
+        TaskResult taskResult = taskExecuteEngine.execute(config, state, parameters, taskContext);
 
-        if (actionResult != null && actionResult.isSuccess()) {
+        if (taskResult != null && taskResult.isSuccess()) {
             // Engine owns the terminal COMPLETED status (post-actions such as
             // LOG only add audit trail, they are optional)
             state.setStatus(TaskStatus.COMPLETED);
@@ -254,11 +254,11 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         // Save final state
         stateManager.save(state);
 
-        if (actionResult != null && actionResult.isSuccess()) {
-            String message = responseBuilder.buildDone(actionResult);
-            return AiTaskResponse.done(state.getTaskId(), message, actionResult, state);
+        if (taskResult != null && taskResult.isSuccess()) {
+            String message = responseBuilder.buildDone(taskResult);
+            return AiTaskResponse.done(state.getTaskId(), message, taskResult, state);
         } else {
-            String message = actionResult != null ? actionResult.getErrorMessage() : "动作执行失败";
+            String message = taskResult != null ? taskResult.getErrorMessage() : "任务执行失败";
             return AiTaskResponse.needMore(state.getTaskId(), message, state);
         }
     }

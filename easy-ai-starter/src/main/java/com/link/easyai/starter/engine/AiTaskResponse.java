@@ -1,6 +1,6 @@
 package com.link.easyai.starter.engine;
 
-import com.link.easyai.starter.engine.action.ActionResult;
+import com.link.easyai.starter.engine.task.TaskResult;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.state.TaskState;
 import lombok.Data;
@@ -26,8 +26,8 @@ public class AiTaskResponse {
     /** Message to show the user (prompt for next fields, or action result) */
     private String message;
 
-    /** Action result if the task completed */
-    private ActionResult actionResult;
+    /** Task result if the task completed */
+    private TaskResult taskResult;
 
     /** Current task state (for debugging / traceability) */
     private TaskState state;
@@ -47,12 +47,12 @@ public class AiTaskResponse {
     /**
      * Build a "task complete" response (action was executed).
      */
-    public static AiTaskResponse done(String taskId, String message, ActionResult actionResult, TaskState state) {
+    public static AiTaskResponse done(String taskId, String message, TaskResult taskResult, TaskState state) {
         return AiTaskResponse.builder()
                 .taskId(taskId)
                 .completed(true)
                 .message(message)
-                .actionResult(actionResult)
+                .taskResult(taskResult)
                 .state(state)
                 .build();
     }

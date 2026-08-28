@@ -29,5 +29,5 @@ public interface ResponseBuilder {
      * @param actionResult the action result
      * @return user-facing message
      */
-    String buildDone(com.link.easyai.starter.engine.action.ActionResult actionResult);
+    String buildDone(com.link.easyai.starter.engine.task.TaskResult taskResult);
 }

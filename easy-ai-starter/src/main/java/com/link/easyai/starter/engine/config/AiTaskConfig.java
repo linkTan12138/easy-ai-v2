@@ -47,8 +47,8 @@ public class AiTaskConfig {
     /** Completion criteria configuration */
     private CompletionConfig completion;
 
-    /** Action to execute when all fields are collected */
-    private ActionConfig action;
+    /** Task executor to execute when all fields are collected (or directly for pure-action tasks) */
+    private TaskExecuteConfig executeConfig;
 
     /** Extension points for future use */
     private Map<String, Object> extensions;

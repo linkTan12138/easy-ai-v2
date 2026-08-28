@@ -1,6 +1,6 @@
 package com.link.easyai.starter.engine;
 
-import com.link.easyai.starter.engine.action.ActionResult;
+import com.link.easyai.starter.engine.task.TaskResult;
 import com.link.easyai.starter.engine.state.TaskState;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -40,8 +40,8 @@ public class ChatResponse {
     /** The current task state (for progress rendering, may be null). */
     private TaskState taskState;
 
-    /** The action result if the task completed (may be null). */
-    private ActionResult actionResult;
+    /** The task result if the task completed (may be null). */
+    private TaskResult taskResult;
 
     /**
      * Create a "need more info" response.
@@ -60,7 +60,7 @@ public class ChatResponse {
     /**
      * Create a "task completed" response.
      */
-    public static ChatResponse done(String taskId, String message, ActionResult result, TaskState state) {
+    public static ChatResponse done(String taskId, String message, TaskResult result, TaskState state) {
         return ChatResponse.builder()
                 .message(message)
                 .taskId(taskId)
@@ -68,7 +68,7 @@ public class ChatResponse {
                 .needMore(false)
                 .completed(true)
                 .taskState(state)
-                .actionResult(result)
+                .taskResult(result)
                 .build();
     }
 

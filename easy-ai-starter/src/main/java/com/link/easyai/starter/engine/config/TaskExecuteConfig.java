@@ -9,21 +9,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Action configuration for a task.
- * The "type" maps to a registered {@link com.link.easyai.starter.engine.action.ActionExecutor}.
+ * 任务执行器配置。
+ * <p>
+ * {@code type} 映射到已注册的 {@link com.link.easyai.starter.engine.task.TaskExecutor}。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ActionConfig {
+public class TaskExecuteConfig {
 
-    /** Main action type identifier, e.g. "UPDATE_WAYBILL" */
+    /** 主任务类型标识，如 "CREATE_TICKET" */
     private String type;
 
-    /** Post-actions to execute after the main action succeeds */
+    /** 主任务成功后执行的后置任务列表 */
     private List<String> postActions;
 
-    /** Extra parameters for the action */
+    /** 任务的额外参数 */
     private Map<String, Object> params;
 }

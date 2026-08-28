@@ -446,7 +446,7 @@ public class DefaultAiChatService implements AiChatService {
             return ChatResponse.done(
                     engineResponse.getTaskId(),
                     engineResponse.getMessage(),
-                    engineResponse.getActionResult(),
+                    engineResponse.getTaskResult(),
                     engineResponse.getState()
             ).withTaskType(taskType);
         }

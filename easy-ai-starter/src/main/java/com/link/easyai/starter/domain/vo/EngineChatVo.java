@@ -38,8 +38,8 @@ public class EngineChatVo {
         vo.setTaskId(response.getTaskId());
         vo.setCompleted(response.isCompleted());
         vo.setMessage(response.getMessage());
-        if (response.getActionResult() != null) {
-            vo.setActionData(response.getActionResult().getData());
+        if (response.getTaskResult() != null) {
+            vo.setActionData(response.getTaskResult().getData());
         }
         if (response.getState() != null && response.getState().getStatus() != null) {
             vo.setStatus(response.getState().getStatus().name());

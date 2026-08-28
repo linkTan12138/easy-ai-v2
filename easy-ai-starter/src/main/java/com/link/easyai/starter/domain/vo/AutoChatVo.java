@@ -52,8 +52,8 @@ public class AutoChatVo {
         vo.setCompleted(response.isCompleted());
         vo.setNeedMore(response.isNeedMore());
         vo.setClarification(response.isClarification());
-        if (response.getActionResult() != null) {
-            vo.setActionData(response.getActionResult().getData());
+        if (response.getTaskResult() != null) {
+            vo.setActionData(response.getTaskResult().getData());
         }
         if (response.getTaskState() != null && response.getTaskState().getStatus() != null) {
             vo.setStatus(response.getTaskState().getStatus().name());

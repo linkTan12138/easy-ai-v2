@@ -1,6 +1,6 @@
 package com.link.easyai.starter.engine;
 
-import com.link.easyai.starter.engine.action.ActionResult;
+import com.link.easyai.starter.engine.task.TaskResult;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.config.CompletionConfig;
@@ -99,21 +99,21 @@ public class DefaultResponseBuilder implements ResponseBuilder {
     }
 
     @Override
-    public String buildDone(ActionResult actionResult) {
-        if (actionResult == null) {
+    public String buildDone(TaskResult taskResult) {
+        if (taskResult == null) {
             return "任务已完成。";
         }
 
-        if (actionResult.isSuccess()) {
-            if (actionResult.getMessage() != null && !actionResult.getMessage().isBlank()) {
-                return actionResult.getMessage();
+        if (taskResult.isSuccess()) {
+            if (taskResult.getMessage() != null && !taskResult.getMessage().isBlank()) {
+                return taskResult.getMessage();
             }
             return "任务已完成。";
         } else {
-            // Action failed
-            String msg = actionResult.getErrorMessage();
+            // Task failed
+            String msg = taskResult.getErrorMessage();
             if (msg == null || msg.isBlank()) {
-                msg = actionResult.getMessage();
+                msg = taskResult.getMessage();
             }
             if (msg == null || msg.isBlank()) {
                 msg = "任务执行失败，请重试。";
