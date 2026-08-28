@@ -43,7 +43,7 @@ public class KimiProvider implements LLMProvider {
         body.put("messages", msgList);
         body.put("stream", false);
 
-        String url = endpoint + "/chat/completions";
+        String url = buildChatUrl(endpoint);
         log.debug("[KimiProvider] POST {} model={}", url, model);
 
         try (HttpResponse resp = HttpRequest.post(url)
@@ -72,6 +72,20 @@ public class KimiProvider implements LLMProvider {
     @Override
     public String getName() {
         return "kimi";
+    }
+
+    /**
+     * 构建 chat/completions URL。
+     * 如果 endpoint 已经包含 /chat/completions，则直接使用；否则拼接。
+     */
+    private String buildChatUrl(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            return DEFAULT_ENDPOINT + "/chat/completions";
+        }
+        if (endpoint.toLowerCase().endsWith("/chat/completions")) {
+            return endpoint;
+        }
+        return endpoint + "/chat/completions";
     }
 
     private List<Map<String, String>> convertMessages(List<Message> messages) {

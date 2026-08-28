@@ -64,4 +64,12 @@ public class LargeLanguageModelFactory {
     public LLMProviderFactory getLlmProviderFactory() {
         return llmProviderFactory;
     }
+
+    /**
+     * 清除适配器缓存（主要用于配置桥接后强制重建 provider）。
+     */
+    public void clearCache() {
+        adapterCache.clear();
+        log.info("[LargeLanguageModelFactory] adapter cache cleared");
+    }
 }

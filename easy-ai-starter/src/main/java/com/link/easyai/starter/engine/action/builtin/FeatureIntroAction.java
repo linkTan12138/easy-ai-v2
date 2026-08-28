@@ -128,8 +128,7 @@ public class FeatureIntroAction implements ActionExecutor {
             int idx = 1;
             for (FeatureMeta f : features) {
                 sb.append(idx++).append(". ").append(f.name)
-                        .append("（").append(f.type).append("）：")
-                        .append(f.description).append("\n");
+                        .append("：").append(f.description).append("\n");
             }
             sb.append("\n您可以直接告诉我要做什么，我会通过对话收集所需信息并自动执行。");
             return sb.toString();

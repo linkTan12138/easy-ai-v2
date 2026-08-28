@@ -267,8 +267,18 @@ public class DefaultIntentEngine implements IntentEngine {
 
     // ---- 关键词降级匹配 ----
 
+    /** 常见虚词/语气词，归一化匹配时移除，提升自然语言变体的命中率 */
+    private static final java.util.Set<String> STOP_WORDS = java.util.Set.of(
+            "你", "我", "他", "她", "它", "的", "了", "吗", "呢", "啊", "吧", "呀", "哦",
+            "为", "给", "把", "被", "让", "使", "向", "往", "从", "到", "在", "于",
+            "一下", "一个", "一些", "这", "那", "这个", "那个", "什么", "怎么", "如何",
+            "请", "请问", "帮忙", "帮我", "能否", "可不可以", "能不能"
+    );
+
     private IntentResult matchByKeyword(String userMessage, Map<String, AiTaskConfig> configs) {
         String lowerMessage = userMessage.toLowerCase();
+        String normalizedMessage = normalize(lowerMessage);
+
         for (Map.Entry<String, AiTaskConfig> entry : configs.entrySet()) {
             AiTaskConfig config = entry.getValue();
             List<String> keywords = config.getKeywords();
@@ -276,13 +286,44 @@ public class DefaultIntentEngine implements IntentEngine {
                 continue;
             }
             for (String keyword : keywords) {
-                if (keyword != null && !keyword.isBlank()
-                        && lowerMessage.contains(keyword.toLowerCase())) {
+                if (keyword == null || keyword.isBlank()) {
+                    continue;
+                }
+                String lowerKeyword = keyword.toLowerCase();
+                // 1. 精确包含匹配
+                if (lowerMessage.contains(lowerKeyword)) {
                     return IntentResult.keywordMatch(entry.getKey(), "Matched keyword: " + keyword);
+                }
+                // 2. 归一化匹配（移除虚词后再匹配，处理"你能为我做什么" vs "你能做什么"）
+                String normalizedKeyword = normalize(lowerKeyword);
+                if (!normalizedKeyword.isBlank() && normalizedKeyword.length() >= 2
+                        && normalizedMessage.contains(normalizedKeyword)) {
+                    log.debug("[IntentEngine] normalized keyword match: '{}' ~= '{}'", keyword, lowerMessage);
+                    return IntentResult.keywordMatch(entry.getKey(),
+                            "Matched keyword (normalized): " + keyword);
                 }
             }
         }
         return null;
+    }
+
+    /**
+     * 归一化文本：移除常见虚词、标点、多余空格，用于模糊关键词匹配。
+     */
+    private String normalize(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String result = text;
+        // 移除标点
+        result = result.replaceAll("[\\p{Punct}\\p{S}]", "");
+        // 移除虚词（按长度降序替换，避免"一下"被"一"先替换）
+        for (String word : STOP_WORDS) {
+            result = result.replace(word, "");
+        }
+        // 移除多余空格
+        result = result.replaceAll("\\s+", "");
+        return result;
     }
 
     // ---- Prompt 构建 ----

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.Date;
 import java.util.Map;
 
 /**
@@ -112,6 +113,13 @@ public class DefaultTaskStateManager implements TaskStateManager {
                 // tenant_id：优先从 state.context 取，兜底 0（数据库列无默认值，必须显式设置）
                 Long tenantId = state.getFromContext("tenantId");
                 entity.setTenantId(tenantId != null ? tenantId : 0L);
+                // 审计字段（数据库 NOT NULL，必须显式设置，不依赖自动填充）
+                Date now = new Date();
+                entity.setCreateTime(now);
+                entity.setUpdateTime(now);
+                entity.setCreateBy(0L);
+                entity.setUpdateBy(0L);
+                entity.setDeleted(0);
                 taskMapper.insert(entity);
                 state.setVersion(0);
                 log.info("[TaskStateManager] created new task record: taskId={}, id={}, taskType={}",

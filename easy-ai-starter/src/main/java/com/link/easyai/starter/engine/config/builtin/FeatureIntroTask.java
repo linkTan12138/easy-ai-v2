@@ -21,13 +21,19 @@ import com.link.easyai.starter.engine.annotation.AiTask;
         description = "当用户询问系统功能、使用方式、支持哪些操作时，返回功能清单与简要说明",
         action = FeatureIntroAction.class,
         postActions = {"LOG"},
-        keywords = {"功能介绍", "你能做什么", "有什么功能", "怎么用", "使用说明", "帮助", "help", "what can you do", "features"},
+        keywords = {"功能介绍", "你能做什么", "你能为我做什么", "能做什么", "可以做什么", "会做什么",
+                "有什么功能", "有哪些功能", "支持什么", "能帮我", "可以帮我",
+                "怎么用", "如何使用", "使用说明", "使用方法", "操作指南",
+                "帮助", "帮我", "介绍一下", "介绍下", "介绍系统",
+                "help", "what can you do", "what do you do", "features", "capabilities"},
         examples = {
                 "你能做什么",
+                "你能为我做什么",
                 "有什么功能",
                 "介绍一下系统",
                 "怎么下单",
-                "帮我看看有哪些操作"
+                "帮我看看有哪些操作",
+                "可以帮我做什么"
         }
 )
 public class FeatureIntroTask {
