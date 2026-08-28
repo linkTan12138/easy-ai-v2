@@ -3,6 +3,7 @@ package com.link.easyai.starter.engine.extraction;
 import com.link.easyai.starter.engine.config.ExtractionConfig;
 import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.config.OptionDefinition;
+import com.link.easyai.starter.engine.history.ChatMessage;
 import com.link.easyai.starter.engine.state.FieldState;
 import com.link.easyai.starter.engine.state.TaskState;
 import org.springframework.stereotype.Component;
@@ -31,12 +32,23 @@ public class DefaultPromptBuilder implements PromptBuilder {
     @Override
     public String build(List<FieldDefinition> pendingFields,
                         List<FieldDefinition> allFields,
-                        TaskState state) {
+                        TaskState state,
+                        List<ChatMessage> chatHistory) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("你是一个信息抽取助手。请从用户消息中抽取下列字段的值，")
           .append("只输出一个 JSON 对象，不要输出任何其他文字。输出格式：")
           .append("{\"fields\": {\"字段代码\": 抽取的值, ...}, \"reason\": \"抽取依据的简短说明\"}\n\n");
+
+        // 对话历史（如有），放在字段列表之前，帮助LLM理解上下文指代
+        if (chatHistory != null && !chatHistory.isEmpty()) {
+            sb.append("以下是本次对话的历史记录（仅供上下文参考，注意用户可能用\"刚才那个\"、\"上面说的\"等指代历史中的信息）：\n");
+            for (ChatMessage msg : chatHistory) {
+                String role = "user".equalsIgnoreCase(msg.getRole()) ? "用户" : "AI";
+                sb.append("[").append(role).append("]：").append(msg.getContent()).append("\n");
+            }
+            sb.append("\n");
+        }
 
         sb.append("待抽取字段列表：\n");
         int index = 1;

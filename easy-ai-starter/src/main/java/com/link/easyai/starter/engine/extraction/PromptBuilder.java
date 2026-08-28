@@ -1,6 +1,7 @@
 package com.link.easyai.starter.engine.extraction;
 
 import com.link.easyai.starter.engine.config.FieldDefinition;
+import com.link.easyai.starter.engine.history.ChatMessage;
 import com.link.easyai.starter.engine.state.TaskState;
 
 import java.util.List;
@@ -26,9 +27,13 @@ public interface PromptBuilder {
      *                      "订单号" for 客户单号). When null, the summary falls
      *                      back to plain "code=value" lines.
      * @param state         the current task state (for context: already collected values)
+     * @param chatHistory   the conversation history (sliding window), for multi-turn
+     *                      context understanding such as coreference resolution.
+     *                      May be empty if no history exists.
      * @return the system prompt string
      */
     String build(List<FieldDefinition> pendingFields,
                  List<FieldDefinition> allFields,
-                 TaskState state);
+                 TaskState state,
+                 List<ChatMessage> chatHistory);
 }

@@ -4,11 +4,14 @@ import com.link.easyai.starter.domain.entity.AiChatSession;
 import com.link.easyai.starter.engine.context.TaskContext;
 import com.link.easyai.starter.engine.intent.IntentEngine;
 import com.link.easyai.starter.engine.intent.IntentResult;
+import com.link.easyai.starter.engine.lock.TaskLockManager;
+import com.link.easyai.starter.engine.history.ChatHistoryManager;
 import com.link.easyai.starter.engine.observability.PromptInjectionDetector;
 import com.link.easyai.starter.engine.session.SessionManager;
 import com.link.easyai.starter.engine.state.TaskState;
 import com.link.easyai.starter.engine.state.TaskStateManager;
 import com.link.easyai.starter.engine.state.TaskStatus;
+import com.link.easyai.starter.engine.util.SnowflakeIdGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +19,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 默认 AI 聊天服务实现。
@@ -40,18 +42,27 @@ public class DefaultAiChatService implements AiChatService {
     private final SessionManager sessionManager;
     private final TaskStateManager taskStateManager;
     private final AiTaskProperties properties;
+    private final SnowflakeIdGenerator idGenerator;
+    private final TaskLockManager lockManager;
+    private final ChatHistoryManager chatHistoryManager;
 
     @Autowired
     public DefaultAiChatService(AiTaskEngine aiTaskEngine,
                                  IntentEngine intentEngine,
                                  SessionManager sessionManager,
                                  TaskStateManager taskStateManager,
-                                 AiTaskProperties properties) {
+                                 AiTaskProperties properties,
+                                 SnowflakeIdGenerator idGenerator,
+                                 TaskLockManager lockManager,
+                                 ChatHistoryManager chatHistoryManager) {
         this.aiTaskEngine = aiTaskEngine;
         this.intentEngine = intentEngine;
         this.sessionManager = sessionManager;
         this.taskStateManager = taskStateManager;
         this.properties = properties;
+        this.idGenerator = idGenerator;
+        this.lockManager = lockManager;
+        this.chatHistoryManager = chatHistoryManager;
     }
 
     @Override
@@ -63,7 +74,24 @@ public class DefaultAiChatService implements AiChatService {
         // 1. 输入安全检查
         String safeMessage = sanitizeInput(message);
 
-        // 2. 加载/创建会话
+        // 2. 分布式锁：防止同一 sessionId 并发请求导致状态错乱
+        //    锁过期时间60秒（LLM调用通常2-10秒，留足余量）
+        String lockKey = "easyai:session:" + sessionId;
+        String lockToken = lockManager.tryLock(lockKey, 60);
+        if (lockToken == null) {
+            log.warn("[AiChatService] session={} is locked by another request, rejecting", sessionId);
+            return ChatResponse.fallback("请求过于频繁，请稍后再试");
+        }
+
+        try {
+            return doChat(safeMessage, sessionId, context);
+        } finally {
+            lockManager.unlock(lockKey, lockToken);
+        }
+    }
+
+    private ChatResponse doChat(String safeMessage, String sessionId, TaskContext context) {
+        // 3. 加载/创建会话
         Long tenantId = context != null && context.getTenantId() != null ? context.getTenantId() : 0L;
         AiChatSession session = sessionManager.loadOrCreate(sessionId, tenantId);
 
@@ -78,6 +106,8 @@ public class DefaultAiChatService implements AiChatService {
             }
             // 重置会话为 IDLE，复用当前 sessionId，避免用户必须换 ID 才能继续
             sessionManager.reset(sessionId);
+            // 超时重置时清空对话历史，开启全新会话
+            chatHistoryManager.clearHistory(sessionId);
             sessionReset = true;
             log.info("[AiChatService] session={} expired ({}min idle), reset and continuing as new session",
                     sessionId, timeoutMinutes);
@@ -115,6 +145,15 @@ public class DefaultAiChatService implements AiChatService {
             String prefix = "之前的会话已超时（超过 " + timeoutMinutes + " 分钟未活跃），已为您开启新会话。\n\n";
             response.setMessage(prefix + response.getMessage());
         }
+
+        // 记录对话历史（滑动窗口），用于下一轮的上下文理解
+        try {
+            chatHistoryManager.appendUserMessage(sessionId, safeMessage);
+            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage());
+        } catch (Exception e) {
+            log.warn("[AiChatService] failed to record chat history for session={}: {}", sessionId, e.getMessage());
+        }
+
         return response;
     }
 
@@ -125,6 +164,23 @@ public class DefaultAiChatService implements AiChatService {
         }
 
         String safeMessage = sanitizeInput(message);
+
+        // 分布式锁：防止同一 sessionId 并发请求
+        String lockKey = "easyai:session:" + sessionId;
+        String lockToken = lockManager.tryLock(lockKey, 60);
+        if (lockToken == null) {
+            log.warn("[AiChatService] chatWithTaskType session={} is locked, rejecting", sessionId);
+            return ChatResponse.fallback("请求过于频繁，请稍后再试");
+        }
+
+        try {
+            return doChatWithTaskType(safeMessage, sessionId, taskType, context);
+        } finally {
+            lockManager.unlock(lockKey, lockToken);
+        }
+    }
+
+    private ChatResponse doChatWithTaskType(String safeMessage, String sessionId, String taskType, TaskContext context) {
         Long tenantId = context != null && context.getTenantId() != null ? context.getTenantId() : 0L;
         AiChatSession session = sessionManager.loadOrCreate(sessionId, tenantId);
 
@@ -137,6 +193,7 @@ public class DefaultAiChatService implements AiChatService {
                 cancelTask(session.getCurrentTaskId());
             }
             sessionManager.reset(sessionId);
+            chatHistoryManager.clearHistory(sessionId);
             sessionReset = true;
             log.info("[AiChatService] chatWithTaskType session={} expired, reset and continuing", sessionId);
             session.setCurrentTaskId(null);
@@ -151,6 +208,15 @@ public class DefaultAiChatService implements AiChatService {
             String prefix = "之前的会话已超时（超过 " + timeoutMinutes + " 分钟未活跃），已为您开启新会话。\n\n";
             response.setMessage(prefix + response.getMessage());
         }
+
+        // 记录对话历史
+        try {
+            chatHistoryManager.appendUserMessage(sessionId, safeMessage);
+            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage());
+        } catch (Exception e) {
+            log.warn("[AiChatService] failed to record chat history (chatWithTaskType) session={}: {}", sessionId, e.getMessage());
+        }
+
         return response;
     }
 
@@ -250,6 +316,10 @@ public class DefaultAiChatService implements AiChatService {
         if (taskContext.getTaskType() == null) {
             taskContext.setTaskType(taskType);
         }
+        // 设置 sessionId，用于引擎加载对话历史
+        if (taskContext.getSessionId() == null) {
+            taskContext.setSessionId(session.getSessionId());
+        }
 
         // 执行任务管道
         AiTaskResponse engineResponse = aiTaskEngine.execute(taskType, taskId, message, taskContext);
@@ -319,10 +389,9 @@ public class DefaultAiChatService implements AiChatService {
     }
 
     private String generateTaskId(String sessionId, String taskType) {
-        // 纯数字 taskId：时间戳(毫秒) + 4位随机数
-        // 必须可被 Long.parseLong 解析，因为 DefaultTaskStateManager 用它作为 tb_chat_session_task 的主键
-        return String.valueOf(System.currentTimeMillis()) +
-                String.format("%04d", ThreadLocalRandom.current().nextInt(10000));
+        // 雪花算法生成全局唯一、趋势递增的任务ID
+        // 替代原有的"时间戳+随机数"方案，消除高并发下的ID碰撞风险
+        return idGenerator.nextIdString();
     }
 
     /**

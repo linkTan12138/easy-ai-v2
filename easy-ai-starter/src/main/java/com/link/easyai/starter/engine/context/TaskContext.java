@@ -20,6 +20,9 @@ public class TaskContext {
     /** Task ID */
     private String taskId;
 
+    /** Session ID (for loading conversation history) */
+    private String sessionId;
+
     /** Task type */
     private String taskType;
 

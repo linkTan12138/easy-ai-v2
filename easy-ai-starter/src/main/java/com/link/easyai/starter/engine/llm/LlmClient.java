@@ -3,13 +3,18 @@ package com.link.easyai.starter.engine.llm;
 import com.link.easyai.starter.engine.AiTaskProperties;
 import com.link.easyai.starter.service.LargeLanguageModel;
 import com.link.easyai.starter.service.LargeLanguageModelFactory;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Resilient LLM client with retry, exponential backoff, and fallback models.
@@ -31,11 +36,27 @@ public class LlmClient {
 
     private final LargeLanguageModelFactory llmFactory;
     private final AiTaskProperties properties;
+    private final CircuitBreaker circuitBreaker;
+    private final RateLimiter rateLimiter;
+    private final boolean resilienceEnabled;
 
     @Autowired
-    public LlmClient(LargeLanguageModelFactory llmFactory, AiTaskProperties properties) {
+    public LlmClient(LargeLanguageModelFactory llmFactory,
+                     AiTaskProperties properties,
+                     ObjectProvider<CircuitBreaker> circuitBreakerProvider,
+                     ObjectProvider<RateLimiter> rateLimiterProvider) {
         this.llmFactory = llmFactory;
         this.properties = properties;
+        this.circuitBreaker = circuitBreakerProvider.getIfAvailable();
+        this.rateLimiter = rateLimiterProvider.getIfAvailable();
+        this.resilienceEnabled = this.circuitBreaker != null && this.rateLimiter != null
+                && properties.getResilience() != null
+                && properties.getResilience().isEnabled();
+        if (resilienceEnabled) {
+            log.info("[LlmClient] resilience enabled: rate limiting + circuit breaking active");
+        } else {
+            log.info("[LlmClient] resilience disabled (not configured or enabled=false)");
+        }
     }
 
     /**
@@ -94,7 +115,7 @@ public class LlmClient {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 log.debug("[LlmClient] calling model '{}' (attempt {}/{})", modelName, attempt, maxRetries);
-                String response = model.chatCompletion(system, user);
+                String response = executeWithResilience(model, system, user);
                 if (response == null || response.isBlank()) {
                     throw new LlmCallException("Model returned empty response", true);
                 }
@@ -131,6 +152,42 @@ public class LlmClient {
             }
         }
         throw new LlmCallException("Unexpected retry loop exit", false);
+    }
+
+    /**
+     * 应用限流熔断后执行实际的 LLM 调用。
+     * <p>
+     * 执行顺序：限流检查 → 熔断包装 → 实际调用。
+     * 限流被拒或熔断打开时，抛出 LlmCallException 触发重试/降级逻辑。
+     */
+    private String executeWithResilience(LargeLanguageModel model, String system, String user) {
+        if (!resilienceEnabled) {
+            return model.chatCompletion(system, user);
+        }
+
+        Supplier<String> call = () -> model.chatCompletion(system, user);
+
+        // 1. 应用熔断
+        if (circuitBreaker != null) {
+            call = CircuitBreaker.decorateSupplier(circuitBreaker, call);
+        }
+
+        // 2. 应用限流
+        if (rateLimiter != null) {
+            call = RateLimiter.decorateSupplier(rateLimiter, call);
+        }
+
+        try {
+            return call.get();
+        } catch (RequestNotPermitted e) {
+            // 限流被拒
+            log.warn("[LlmClient] rate limit exceeded, request rejected");
+            throw new LlmCallException("请求过于频繁，已触发限流保护", false);
+        } catch (io.github.resilience4j.circuitbreaker.CallNotPermittedException e) {
+            // 熔断打开
+            log.warn("[LlmClient] circuit breaker is OPEN, request rejected fast");
+            throw new LlmCallException("LLM服务暂不可用（熔断器已打开），请稍后重试", false);
+        }
     }
 
     private LargeLanguageModel resolveModel(String modelName) {

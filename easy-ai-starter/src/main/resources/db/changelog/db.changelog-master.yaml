@@ -267,3 +267,61 @@ databaseChangeLog:
             columns:
               - column:
                   name: task_id
+  - changeSet:
+      id: 0008-create-task-lock-table
+      author: easy-ai
+      comment: 分布式锁表，防止同一session并发请求导致状态错乱
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: ai_task_lock
+      changes:
+        - createTable:
+            tableName: ai_task_lock
+            remarks: AI任务分布式锁表
+            columns:
+              - column:
+                  name: lock_key
+                  type: VARCHAR(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: lock_owner
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lock_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+              - column:
+                  name: expire_time
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: ai_task_lock
+            indexName: idx_lock_expire
+            columns:
+              - column:
+                  name: expire_time
+  - changeSet:
+      id: 0009-add-chat-history-to-session
+      author: easy-ai
+      comment: 为会话表增加对话历史字段，支持滑动窗口多轮上下文理解
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: ai_chat_session
+            columnName: chat_history
+      changes:
+        - addColumn:
+            tableName: ai_chat_session
+            columns:
+              - column:
+                  name: chat_history
+                  type: LONGTEXT
+                  remarks: 对话历史JSON数组（滑动窗口）

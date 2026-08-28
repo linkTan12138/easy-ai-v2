@@ -9,6 +9,8 @@ import com.link.easyai.starter.engine.context.TaskContext;
 import com.link.easyai.starter.engine.extraction.ExtractionEngine;
 import com.link.easyai.starter.engine.extraction.ExtractionResult;
 import com.link.easyai.starter.engine.extraction.FieldSelector;
+import com.link.easyai.starter.engine.history.ChatMessage;
+import com.link.easyai.starter.engine.history.ChatHistoryManager;
 import com.link.easyai.starter.engine.mapping.MappingEngine;
 import com.link.easyai.starter.engine.normalization.NormalizationEngine;
 import com.link.easyai.starter.engine.state.TaskState;
@@ -66,6 +68,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
     private final LargeLanguageModelHolder llmHolder;
     private final EngineMetrics metrics;
     private final AiTaskProperties properties;
+    private final ChatHistoryManager chatHistoryManager;
 
     @Autowired
     public DefaultAiTaskEngine(AiTaskConfigService configService,
@@ -80,7 +83,8 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
                                ResponseBuilder responseBuilder,
                                LargeLanguageModelHolder llmHolder,
                                EngineMetrics metrics,
-                               AiTaskProperties properties) {
+                               AiTaskProperties properties,
+                               ChatHistoryManager chatHistoryManager) {
         this.configService = configService;
         this.stateManager = stateManager;
         this.fieldSelector = fieldSelector;
@@ -94,6 +98,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         this.llmHolder = llmHolder;
         this.metrics = metrics;
         this.properties = properties;
+        this.chatHistoryManager = chatHistoryManager;
     }
 
     @Override
@@ -186,8 +191,13 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
 
         // 4. Build prompt + call LLM + parse extraction
         LargeLanguageModel llm = llmHolder != null ? llmHolder.getLargeLanguageModel() : null;
+        // 加载对话历史（滑动窗口），用于多轮上下文理解
+        String sessionId = taskContext != null ? taskContext.getSessionId() : null;
+        List<ChatMessage> chatHistory = (sessionId != null && !sessionId.isBlank())
+                ? chatHistoryManager.loadHistory(sessionId)
+                : java.util.Collections.emptyList();
         ExtractionResult extraction = extractionEngine.extract(
-                userMessage, pendingFields, config.getFields(), state, llm);
+                userMessage, pendingFields, config.getFields(), state, chatHistory, llm);
         log.debug("[AiTaskEngine] extraction result: success={}, fields={}",
                 extraction.isSuccess(), extraction.getFields());
 

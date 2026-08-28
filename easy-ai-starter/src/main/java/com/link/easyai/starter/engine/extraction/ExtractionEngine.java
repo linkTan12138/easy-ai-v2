@@ -1,6 +1,7 @@
 package com.link.easyai.starter.engine.extraction;
 
 import com.link.easyai.starter.engine.config.FieldDefinition;
+import com.link.easyai.starter.engine.history.ChatMessage;
 import com.link.easyai.starter.engine.state.TaskState;
 import com.link.easyai.starter.service.LargeLanguageModel;
 
@@ -25,6 +26,8 @@ public interface ExtractionEngine {
      *                       forwarded to the prompt builder so the already-collected
      *                       summary carries field semantics (name/description)
      * @param state          current task state (for context)
+     * @param chatHistory    conversation history sliding window, for multi-turn
+     *                       context understanding. May be empty.
      * @param llm            the LLM to call
      * @return extraction result
      */
@@ -32,5 +35,6 @@ public interface ExtractionEngine {
                               List<FieldDefinition> pendingFields,
                               List<FieldDefinition> allFields,
                               TaskState state,
+                              List<ChatMessage> chatHistory,
                               LargeLanguageModel llm);
 }

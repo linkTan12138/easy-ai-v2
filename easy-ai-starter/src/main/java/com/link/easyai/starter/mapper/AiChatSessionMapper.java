@@ -49,4 +49,19 @@ public interface AiChatSessionMapper extends BaseMapper<AiChatSession> {
             "status = 0, last_active_time = NOW(), turn_count = 0, update_time = NOW() " +
             "WHERE session_id = #{sessionId}")
     int reset(@Param("sessionId") String sessionId);
+
+    /**
+     * 更新会话的对话历史。
+     */
+    @Update("UPDATE ai_chat_session SET chat_history = #{chatHistory}, update_time = NOW() " +
+            "WHERE session_id = #{sessionId}")
+    int updateChatHistory(@Param("sessionId") String sessionId,
+                          @Param("chatHistory") String chatHistory);
+
+    /**
+     * 清空会话的对话历史（任务完成/取消/会话重置时调用）。
+     */
+    @Update("UPDATE ai_chat_session SET chat_history = NULL, update_time = NOW() " +
+            "WHERE session_id = #{sessionId}")
+    int clearChatHistory(@Param("sessionId") String sessionId);
 }

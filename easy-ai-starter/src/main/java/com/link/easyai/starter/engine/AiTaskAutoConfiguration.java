@@ -2,10 +2,13 @@ package com.link.easyai.starter.engine;
 
 import com.link.easyai.starter.engine.action.ActionRegistrar;
 import com.link.easyai.starter.engine.action.ActionRegistry;
+import com.link.easyai.starter.engine.util.SnowflakeIdGenerator;
 import com.link.easyai.starter.engine.validation.ValidatorRegistrar;
 import com.link.easyai.starter.engine.validation.ValidatorRegistry;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
@@ -29,4 +32,16 @@ public class AiTaskAutoConfiguration {
     // - ValidatorRegistry, ValidatorRegistrar
     // - ActionRegistry, ActionRegistrar
     // - All @AiValidator, @AiAction, @AiPostAction annotated beans
+
+    /**
+     * 雪花算法ID生成器。用于生成全局唯一、趋势递增的任务ID，
+     * 替代原有的"时间戳+随机数"方案，消除高并发下的ID碰撞风险。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public SnowflakeIdGenerator snowflakeIdGenerator(AiTaskProperties properties) {
+        return new SnowflakeIdGenerator(
+                properties.getSnowflake().getWorkerId(),
+                properties.getSnowflake().getDatacenterId());
+    }
 }

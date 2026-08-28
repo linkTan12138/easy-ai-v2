@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.link.easyai.starter.config.LargeLanguageModelHolder;
 import com.link.easyai.starter.engine.config.FieldDefinition;
+import com.link.easyai.starter.engine.history.ChatMessage;
 import com.link.easyai.starter.engine.llm.LlmCallException;
 import com.link.easyai.starter.engine.llm.LlmClient;
 import com.link.easyai.starter.engine.llm.RobustJsonParser;
@@ -61,6 +62,7 @@ public class DefaultExtractionEngine implements ExtractionEngine {
                                     List<FieldDefinition> pendingFields,
                                     List<FieldDefinition> allFields,
                                     TaskState state,
+                                    List<ChatMessage> chatHistory,
                                     LargeLanguageModel llm) {
         if (userMessage == null || userMessage.isBlank()) {
             return ExtractionResult.builder()
@@ -70,8 +72,8 @@ public class DefaultExtractionEngine implements ExtractionEngine {
                     .build();
         }
 
-        // 1. Build system prompt from pending fields
-        String systemPrompt = promptBuilder.build(pendingFields, allFields, state);
+        // 1. Build system prompt from pending fields + chat history
+        String systemPrompt = promptBuilder.build(pendingFields, allFields, state, chatHistory);
 
         // 2. Call LLM via resilient client (retry + fallback)
         String rawResponse;

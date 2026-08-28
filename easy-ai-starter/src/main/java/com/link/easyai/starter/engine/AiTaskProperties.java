@@ -40,6 +40,12 @@ public class AiTaskProperties {
     /** Conversation lifecycle: max turns, timeout, etc. */
     private final Lifecycle lifecycle = new Lifecycle();
 
+    /** Snowflake ID generator configuration (workerId / datacenterId). */
+    private final Snowflake snowflake = new Snowflake();
+
+    /** LLM resilience configuration (rate limiting, circuit breaking). */
+    private final Resilience resilience = new Resilience();
+
     @Data
     public static class Annotation {
 
@@ -94,5 +100,65 @@ public class AiTaskProperties {
 
         /** Whether to enable recovery guidance when resuming an incomplete task. */
         private boolean recoveryGuidanceEnabled = true;
+    }
+
+    @Data
+    public static class Snowflake {
+
+        /**
+         * 工作机器ID (0-31)。多实例部署时每个实例应配置不同的 workerId，
+         * 否则可能产生重复ID。默认0，单实例部署无需修改。
+         */
+        private long workerId = 0L;
+
+        /**
+         * 数据中心ID (0-31)。跨数据中心部署时每个数据中心配置不同的 datacenterId。
+         * 默认0。
+         */
+        private long datacenterId = 0L;
+    }
+
+    @Data
+    public static class Resilience {
+
+        /** 是否启用限流熔断保护。默认启用。 */
+        private boolean enabled = true;
+
+        /**
+         * 限流配置：每秒允许的最大请求数（QPS）。
+         * 超过此限制的请求将快速失败，避免LLM服务被打垮。默认10。
+         */
+        private int rateLimitPerSecond = 10;
+
+        /**
+         * 限流时间窗口（秒）。默认1秒。
+         */
+        private int rateLimitWindowSeconds = 1;
+
+        /**
+         * 熔断配置：滑动窗口大小（请求数）。
+         * 当最近N个请求的失败率超过阈值时，熔断器打开。默认20。
+         */
+        private int circuitBreakerSlidingWindowSize = 20;
+
+        /**
+         * 熔断失败率阈值（百分比，0-100）。默认50。
+         */
+        private float circuitBreakerFailureRateThreshold = 50.0f;
+
+        /**
+         * 熔断打开后等待多久进入半开状态（秒）。默认30。
+         */
+        private int circuitBreakerWaitDurationInOpenStateSeconds = 30;
+
+        /**
+         * 半开状态允许通过的请求数。默认5。
+         */
+        private int circuitBreakerPermittedNumberOfCallsInHalfOpenState = 5;
+
+        /**
+         * 最小调用数（熔断器开始计算失败率前的最小请求数）。默认10。
+         */
+        private int circuitBreakerMinimumNumberOfCalls = 10;
     }
 }

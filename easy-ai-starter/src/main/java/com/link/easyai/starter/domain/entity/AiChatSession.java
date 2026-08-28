@@ -41,6 +41,12 @@ public class AiChatSession {
     /** 租户 ID */
     private Long tenantId;
 
+    /**
+     * 对话历史（JSON数组），滑动窗口保留最近N轮对话。
+     * 用于传递给LLM提升多轮上下文理解能力。
+     */
+    private String chatHistory;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
