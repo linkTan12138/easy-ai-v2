@@ -38,6 +38,15 @@ public class TaskContext {
     /** Shared mutable context data across fields */
     private Map<String, Object> data;
 
+    /** 意图识别：判断理由（任务创建时传入，会持久化到 TaskState） */
+    private String intentReason;
+
+    /** 意图识别：置信度 0.0-1.0 */
+    private Double intentConfidence;
+
+    /** 意图识别：匹配来源（LLM / KEYWORD / FALLBACK / CONTINUE） */
+    private String intentSource;
+
     /**
      * Put a value into the shared data map.
      */

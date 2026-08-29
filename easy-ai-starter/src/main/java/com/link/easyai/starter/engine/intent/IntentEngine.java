@@ -32,16 +32,22 @@ public interface IntentEngine {
      *   <li>cancel - 取消当前任务</li>
      * </ul>
      *
-     * @param userMessage       用户消息
-     * @param currentTaskType   当前活跃任务类型
-     * @param currentTaskName   当前活跃任务名称
-     * @param collectedFields   已收集字段的简要描述（用于 LLM 判断上下文）
+     * @param userMessage           用户消息
+     * @param currentTaskType       当前活跃任务类型
+     * @param currentTaskName       当前活跃任务名称
+     * @param currentTaskDescription 当前活跃任务描述
+     * @param collectedFields       已收集字段的简要描述
+     * @param lastAiReply           上一轮 AI 回复（可能为 null）
+     * @param recentHistory         最近对话历史（可能为 null 或空）
      * @return 意图识别结果（含 action 字段）
      */
     IntentResult recognizeWithContext(String userMessage,
                                         String currentTaskType,
                                         String currentTaskName,
-                                        String collectedFields);
+                                        String currentTaskDescription,
+                                        String collectedFields,
+                                        String lastAiReply,
+                                        String recentHistory);
 
     /**
      * 获取所有可用任务类型（用于澄清 UI）。

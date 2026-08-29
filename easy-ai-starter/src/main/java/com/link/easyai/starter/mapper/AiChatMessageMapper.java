@@ -24,6 +24,16 @@ public interface AiChatMessageMapper extends BaseMapper<AiChatMessage> {
                                                 @Param("limit") int limit);
 
     /**
+     * 查询指定任务的最近 N 条消息（按创建时间升序，用于当前任务的参数抽取上下文）。
+     * 只返回 task_id 匹配的消息，避免跨任务历史污染。
+     */
+    @Select("SELECT * FROM ai_chat_message WHERE session_id = #{sessionId} AND task_id = #{taskId} AND deleted = 0 " +
+            "ORDER BY create_time ASC LIMIT #{limit}")
+    List<AiChatMessage> selectBySessionIdAndTaskId(@Param("sessionId") String sessionId,
+                                                    @Param("taskId") String taskId,
+                                                    @Param("limit") int limit);
+
+    /**
      * 查询会话的所有消息（按创建时间升序，用于历史查询）。
      */
     @Select("SELECT * FROM ai_chat_message WHERE session_id = #{sessionId} AND deleted = 0 " +

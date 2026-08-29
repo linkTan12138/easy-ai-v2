@@ -29,16 +29,22 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class EngineMetrics {
 
-    private final MeterRegistry registry;
+    private final ObjectProvider<MeterRegistry> registryProvider;
 
     @Autowired
     public EngineMetrics(ObjectProvider<MeterRegistry> registryProvider) {
-        this.registry = registryProvider.getIfAvailable();
+        this.registryProvider = registryProvider;
+    }
+
+    /** 延迟获取 MeterRegistry，避免构造时 Actuator 尚未初始化 */
+    private MeterRegistry registry() {
+        return registryProvider.getIfAvailable();
     }
 
     // ---- Chat metrics ----
 
     public void recordChat(String taskType, String result) {
+        MeterRegistry registry = registry();
         if (registry == null) return;
         Counter.builder("easyai_chat_total")
                 .description("Total chat turns")
@@ -51,11 +57,13 @@ public class EngineMetrics {
     // ---- Task duration ----
 
     public Timer.Sample startTaskTimer() {
+        MeterRegistry registry = registry();
         if (registry == null) return null;
         return Timer.start(registry);
     }
 
     public void stopTaskTimer(Timer.Sample sample, String taskType) {
+        MeterRegistry registry = registry();
         if (registry == null || sample == null) return;
         sample.stop(Timer.builder("easyai_task_duration_seconds")
                 .description("Task duration from create to complete")
@@ -66,11 +74,13 @@ public class EngineMetrics {
     // ---- Stage duration ----
 
     public Timer.Sample startStageTimer() {
+        MeterRegistry registry = registry();
         if (registry == null) return null;
         return Timer.start(registry);
     }
 
     public void stopStageTimer(Timer.Sample sample, String stage) {
+        MeterRegistry registry = registry();
         if (registry == null || sample == null) return;
         sample.stop(Timer.builder("easyai_stage_duration_seconds")
                 .description("Pipeline stage duration")
@@ -81,6 +91,7 @@ public class EngineMetrics {
     // ---- Extraction metrics ----
 
     public void recordExtraction(boolean success) {
+        MeterRegistry registry = registry();
         if (registry == null) return;
         Counter.builder("easyai_extraction_success_total")
                 .description("LLM extraction success/failure count")
@@ -92,6 +103,7 @@ public class EngineMetrics {
     // ---- Validation metrics ----
 
     public void recordValidationFailure(String fieldCode, String validator) {
+        MeterRegistry registry = registry();
         if (registry == null) return;
         Counter.builder("easyai_validation_fail_total")
                 .description("Validation failure count")
@@ -104,6 +116,7 @@ public class EngineMetrics {
     // ---- Field collect turns ----
 
     public void recordFieldCollectTurns(double turns) {
+        MeterRegistry registry = registry();
         if (registry == null) return;
         DistributionSummary.builder("easyai_field_collect_turns")
                 .description("Average turns to collect a field")
@@ -114,6 +127,7 @@ public class EngineMetrics {
     // ---- LLM tokens ----
 
     public void recordLlmTokens(String model, long tokens) {
+        MeterRegistry registry = registry();
         if (registry == null) return;
         Counter.builder("easyai_llm_tokens_total")
                 .description("LLM token consumption")
@@ -125,6 +139,7 @@ public class EngineMetrics {
     // ---- Intent confidence ----
 
     public void recordIntentConfidence(double confidence) {
+        MeterRegistry registry = registry();
         if (registry == null) return;
         DistributionSummary.builder("easyai_intent_confidence")
                 .description("Intent recognition confidence distribution")

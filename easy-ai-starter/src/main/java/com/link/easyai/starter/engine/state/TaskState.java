@@ -53,6 +53,15 @@ public class TaskState {
     @Builder.Default
     private Integer turnCount = 0;
 
+    /** 意图识别：判断理由（仅在任务创建时记录，用于调试提示词） */
+    private String intentReason;
+
+    /** 意图识别：置信度 0.0-1.0 */
+    private Double intentConfidence;
+
+    /** 意图识别：匹配来源（LLM / KEYWORD / FALLBACK / CONTINUE） */
+    private String intentSource;
+
     /**
      * Get the state of a specific field.
      */

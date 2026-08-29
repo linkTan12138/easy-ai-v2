@@ -110,6 +110,10 @@ public class DefaultTaskStateManager implements TaskStateManager {
                 entity.setStatus(mapStatusToInt(state.getStatus()));
                 entity.setType(1); // AI-driven task type
                 entity.setVersion(0);
+                // 意图识别信息（仅在任务创建时记录，后续轮次不覆盖）
+                entity.setIntentReason(state.getIntentReason());
+                entity.setIntentConfidence(state.getIntentConfidence());
+                entity.setIntentSource(state.getIntentSource());
                 // tenant_id：优先从 state.context 取，兜底 0（数据库列无默认值，必须显式设置）
                 Long tenantId = state.getFromContext("tenantId");
                 entity.setTenantId(tenantId != null ? tenantId : 0L);
@@ -159,6 +163,10 @@ public class DefaultTaskStateManager implements TaskStateManager {
         updateEntity.setExtraContent(entity.getExtraContent());
         updateEntity.setScenarioCode(entity.getScenarioCode());
         updateEntity.setTenantId(entity.getTenantId());
+        // 意图识别信息：保留创建时的原始值，不随后续轮次更新覆盖
+        updateEntity.setIntentReason(entity.getIntentReason());
+        updateEntity.setIntentConfidence(entity.getIntentConfidence());
+        updateEntity.setIntentSource(entity.getIntentSource());
 
         int rows = taskMapper.updateWithVersion(updateEntity, expectedVersion);
         if (rows > 0) {

@@ -28,6 +28,18 @@ public interface ChatHistoryManager {
     List<ChatMessage> loadHistory(String sessionId);
 
     /**
+     * 加载指定任务的对话历史（按时间升序）。
+     * <p>
+     * 用于当前任务的参数抽取，只返回该任务创建后的消息，
+     * 避免上一个任务的历史污染当前任务的字段抽取。
+     *
+     * @param sessionId 会话ID
+     * @param taskId    任务ID
+     * @return 该任务的对话消息列表（按时间升序），无历史返回空列表
+     */
+    List<ChatMessage> loadHistoryByTask(String sessionId, String taskId);
+
+    /**
      * 追加一条用户消息到历史。
      *
      * @param sessionId 会话ID

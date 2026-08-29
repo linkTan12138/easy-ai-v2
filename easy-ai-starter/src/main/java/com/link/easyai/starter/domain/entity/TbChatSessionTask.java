@@ -25,6 +25,12 @@ public class TbChatSessionTask extends BaseEntity {
     private Integer configVersion;
     // AI Task Engine: full task state serialized as JSON
     private String aiTaskState;
+    // 意图识别：判断理由（用于调试提示词）
+    private String intentReason;
+    // 意图识别：置信度 0.0-1.0
+    private Double intentConfidence;
+    // 意图识别：匹配来源（LLM / KEYWORD / FALLBACK / CONTINUE）
+    private String intentSource;
     // Optimistic lock version
     private Integer version;
     private Long tenantId;

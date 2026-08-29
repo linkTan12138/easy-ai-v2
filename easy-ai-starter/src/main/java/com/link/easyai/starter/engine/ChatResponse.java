@@ -43,6 +43,15 @@ public class ChatResponse {
     /** The task result if the task completed (may be null). */
     private TaskResult taskResult;
 
+    /** 意图识别：判断理由（用于调试提示词） */
+    private String intentReason;
+
+    /** 意图识别：置信度 0.0-1.0 */
+    private Double intentConfidence;
+
+    /** 意图识别：匹配来源（LLM / KEYWORD / FALLBACK / CONTINUE） */
+    private String intentSource;
+
     /**
      * Create a "need more info" response.
      */
@@ -112,6 +121,16 @@ public class ChatResponse {
      */
     public ChatResponse withTaskType(String taskType) {
         this.taskType = taskType;
+        return this;
+    }
+
+    /**
+     * 填充意图识别信息（reason / confidence / source）。
+     */
+    public ChatResponse withIntent(String reason, Double confidence, String source) {
+        this.intentReason = reason;
+        this.intentConfidence = confidence;
+        this.intentSource = source;
         return this;
     }
 }

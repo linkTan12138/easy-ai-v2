@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.link.easyai.starter.config.LLMlHolder;
 import com.link.easyai.starter.engine.AnnotationAiTaskConfigService;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
+import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.llm.LlmCallException;
 import com.link.easyai.starter.engine.llm.LlmClient;
 import com.link.easyai.starter.engine.llm.RobustJsonParser;
@@ -92,7 +93,10 @@ public class DefaultIntentEngine implements IntentEngine {
     public IntentResult recognizeWithContext(String userMessage,
                                                String currentTaskType,
                                                String currentTaskName,
-                                               String collectedFields) {
+                                               String currentTaskDescription,
+                                               String collectedFields,
+                                               String lastAiReply,
+                                               String recentHistory) {
         if (userMessage == null || userMessage.isBlank()) {
             return IntentResult.continueTask(currentTaskType);
         }
@@ -105,7 +109,8 @@ public class DefaultIntentEngine implements IntentEngine {
         // LLM 判断 continue/switch/cancel
         try {
             IntentResult result = classifyWithContextByLlm(
-                    userMessage, currentTaskType, currentTaskName, collectedFields, allConfigs);
+                    userMessage, currentTaskType, currentTaskName, currentTaskDescription,
+                    collectedFields, lastAiReply, recentHistory, allConfigs);
             if (result != null) {
                 log.info("[IntentEngine] LLM context result: action={}, taskType={}, confidence={}",
                         result.getAction(), result.getTaskType(), result.getConfidence());
@@ -213,10 +218,13 @@ public class DefaultIntentEngine implements IntentEngine {
     private IntentResult classifyWithContextByLlm(String userMessage,
                                                     String currentTaskType,
                                                     String currentTaskName,
+                                                    String currentTaskDescription,
                                                     String collectedFields,
+                                                    String lastAiReply,
+                                                    String recentHistory,
                                                     Map<String, AiTaskConfig> configs) {
         String prompt = buildContextPrompt(userMessage, currentTaskType, currentTaskName,
-                collectedFields, configs);
+                currentTaskDescription, collectedFields, lastAiReply, recentHistory, configs);
         String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "deepseek";
 
         String response;
@@ -356,34 +364,81 @@ public class DefaultIntentEngine implements IntentEngine {
     private String buildContextPrompt(String userMessage,
                                         String currentTaskType,
                                         String currentTaskName,
+                                        String currentTaskDescription,
                                         String collectedFields,
+                                        String lastAiReply,
+                                        String recentHistory,
                                         Map<String, AiTaskConfig> configs) {
         StringBuilder sb = new StringBuilder();
-        sb.append("你是一个客服对话意图判断器。当前正在进行一个任务，请判断用户的下一条消息是：\n");
-        sb.append("1. continue - 继续当前任务（提供参数、修正参数、确认等）\n");
-        sb.append("2. switch - 切换到一个新任务（用户明确表示要做别的事情）\n");
-        sb.append("3. cancel - 取消当前任务（用户说算了/不弄了/取消等）\n\n");
+        sb.append("你是一个客服对话意图判断器。用户正在进行一个任务，请判断用户的下一条消息属于哪种情况：\n\n");
+        sb.append("【判断规则 - 非常重要】\n");
+        sb.append("1. continue - 继续当前任务：用户在补充参数、修正信息、回答AI的提问、或描述与当前任务相关的内容。\n");
+        sb.append("   注意：即使消息中提到了其他业务名词（如\"物流\"、\"退款\"），只要是在描述当前任务的问题内容，就应该 continue。\n");
+        sb.append("2. switch - 切换到新任务：用户明确表示要做另一件完全不同的事情，如\"我要退款\"、\"帮我查物流\"、\"我要请假\"。\n");
+        sb.append("   注意：必须是用户主动发起的新操作请求，而不是在描述当前任务的内容。\n");
+        sb.append("3. cancel - 取消当前任务：用户说\"算了\"、\"不弄了\"、\"取消\"、\"不用了\"等。\n\n");
 
-        sb.append("当前任务:\n");
-        sb.append("  类型: ").append(currentTaskType).append("\n");
-        sb.append("  名称: ").append(currentTaskName != null ? currentTaskName : currentTaskType).append("\n");
+        sb.append("【默认策略】\n");
+        sb.append("拿不准时一律返回 continue！错误地切换任务比错误地继续任务的后果严重得多。\n\n");
+
+        sb.append("【当前任务完整信息】\n");
+        sb.append("  任务类型: ").append(currentTaskType).append("\n");
+        sb.append("  任务名称: ").append(currentTaskName != null ? currentTaskName : currentTaskType).append("\n");
+        if (currentTaskDescription != null && !currentTaskDescription.isBlank()) {
+            sb.append("  任务描述: ").append(currentTaskDescription).append("\n");
+        }
         if (collectedFields != null && !collectedFields.isBlank()) {
-            sb.append("  已收集: ").append(collectedFields).append("\n");
+            sb.append("  已收集字段: ").append(collectedFields).append("\n");
         }
 
-        sb.append("\n可用的其他任务类型（如果用户要切换）:\n");
+        // 获取当前任务配置，列出待收集字段
+        AiTaskConfig currentConfig = configs.get(currentTaskType);
+        if (currentConfig != null && currentConfig.getFields() != null && !currentConfig.getFields().isEmpty()) {
+            sb.append("  待收集字段: ");
+            List<String> pendingFields = new ArrayList<>();
+            for (FieldDefinition fc : currentConfig.getFields()) {
+                if (fc != null && fc.getCode() != null) {
+                    boolean collected = collectedFields != null
+                            && collectedFields.contains(fc.getCode() + "=");
+                    if (!collected) {
+                        String label = fc.getName() != null ? fc.getName() : fc.getCode();
+                        pendingFields.add(label + "(" + fc.getCode() + ")");
+                    }
+                }
+            }
+            sb.append(pendingFields.isEmpty() ? "无（所有字段已收集）" : String.join("、", pendingFields));
+            sb.append("\n");
+        }
+
+        if (lastAiReply != null && !lastAiReply.isBlank()) {
+            sb.append("\n【上一轮 AI 回复】\n").append(lastAiReply).append("\n");
+        }
+
+        if (recentHistory != null && !recentHistory.isBlank()) {
+            sb.append("\n【最近对话历史】\n").append(recentHistory).append("\n");
+        }
+
+        sb.append("\n【其他可用任务】（仅在用户明确要切换时参考）:\n");
         for (Map.Entry<String, AiTaskConfig> entry : configs.entrySet()) {
             if (!entry.getKey().equals(currentTaskType)) {
                 sb.append("- ").append(entry.getKey()).append(": ").append(entry.getValue().getName()).append("\n");
             }
         }
 
-        sb.append("\n请以 JSON 格式返回:\n");
+        sb.append("\n【示例】\n");
+        sb.append("当前任务=创建工单，待收集=电话、类型、姓名\n");
+        sb.append("- 用户说\"13800138000，我要投诉物流太慢\" → continue（在提供电话和问题描述）\n");
+        sb.append("- 用户说\"我要查一下物流\" → switch（明确要做新操作）\n");
+        sb.append("- 用户说\"算了不弄了\" → cancel\n\n");
+
+        sb.append("用户消息: ").append(userMessage).append("\n\n");
+
+        sb.append("请以 JSON 格式返回:\n");
         sb.append("{\n");
         sb.append("  \"action\": \"continue | switch | cancel\",\n");
         sb.append("  \"intent\": \"如果是 switch，填写新任务的 type；否则为 null\",\n");
-        sb.append("  \"confidence\": 0.0-1.0,\n");
-        sb.append("  \"reason\": \"简短判断理由\"\n");
+        sb.append("  \"confidence\": 0.0-1.0（switch 时请给出高置信度，低于0.8请改为continue）,\n");
+        sb.append("  \"reason\": \"简短判断理由，说明为什么是continue/switch/cancel\"\n");
         sb.append("}\n");
 
         return sb.toString();

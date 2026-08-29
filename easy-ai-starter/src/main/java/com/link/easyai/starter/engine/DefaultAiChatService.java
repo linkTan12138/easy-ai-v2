@@ -6,6 +6,8 @@ import com.link.easyai.starter.engine.intent.IntentEngine;
 import com.link.easyai.starter.engine.intent.IntentResult;
 import com.link.easyai.starter.engine.lock.TaskLockManager;
 import com.link.easyai.starter.engine.history.ChatHistoryManager;
+import com.link.easyai.starter.engine.history.ChatMessage;
+import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.observability.PromptInjectionDetector;
 import com.link.easyai.starter.engine.session.SessionManager;
 import com.link.easyai.starter.engine.state.TaskState;
@@ -45,6 +47,7 @@ public class DefaultAiChatService implements AiChatService {
     private final SnowflakeIdGenerator idGenerator;
     private final TaskLockManager lockManager;
     private final ChatHistoryManager chatHistoryManager;
+    private final AiTaskConfigService configService;
 
     @Autowired
     public DefaultAiChatService(AiTaskEngine aiTaskEngine,
@@ -54,7 +57,8 @@ public class DefaultAiChatService implements AiChatService {
                                  AiTaskProperties properties,
                                  SnowflakeIdGenerator idGenerator,
                                  TaskLockManager lockManager,
-                                 ChatHistoryManager chatHistoryManager) {
+                                 ChatHistoryManager chatHistoryManager,
+                                 AiTaskConfigService configService) {
         this.aiTaskEngine = aiTaskEngine;
         this.intentEngine = intentEngine;
         this.sessionManager = sessionManager;
@@ -63,6 +67,7 @@ public class DefaultAiChatService implements AiChatService {
         this.idGenerator = idGenerator;
         this.lockManager = lockManager;
         this.chatHistoryManager = chatHistoryManager;
+        this.configService = configService;
     }
 
     @Override
@@ -140,12 +145,6 @@ public class DefaultAiChatService implements AiChatService {
             response = handleNewTask(safeMessage, session, context);
         }
 
-        // 超时重置后的会话，在回复前附加友好提示
-        if (sessionReset) {
-            String prefix = "之前的会话已超时（超过 " + timeoutMinutes + " 分钟未活跃），已为您开启新会话。\n\n";
-            response.setMessage(prefix + response.getMessage());
-        }
-
         // 记录对话历史（滑动窗口），用于下一轮的上下文理解
         try {
             String taskId = response.getTaskId() != null ? response.getTaskId() : session.getCurrentTaskId();
@@ -203,13 +202,8 @@ public class DefaultAiChatService implements AiChatService {
             session.setStatus(AiChatSession.STATUS_IDLE);
         }
 
-        // 直接创建/绑定任务
-        ChatResponse response = createAndExecuteTask(safeMessage, session, taskType, context);
-
-        if (sessionReset) {
-            String prefix = "之前的会话已超时（超过 " + timeoutMinutes + " 分钟未活跃），已为您开启新会话。\n\n";
-            response.setMessage(prefix + response.getMessage());
-        }
+        // 直接创建/绑定任务（指定 taskType，无意图识别，传 null）
+        ChatResponse response = createAndExecuteTask(safeMessage, session, taskType, context, null);
 
         // 记录对话历史
         try {
@@ -229,33 +223,81 @@ public class DefaultAiChatService implements AiChatService {
     private ChatResponse handleWithActiveTask(String message, AiChatSession session, TaskContext context) {
         String currentTaskId = session.getCurrentTaskId();
         String currentTaskType = session.getCurrentTaskType();
+        String sessionId = session.getSessionId();
 
         // 构建已收集字段的简要描述（用于 LLM 上下文判断）
         String collectedFields = buildCollectedFieldsSummary(currentTaskId);
 
-        // LLM 判断 continue/switch/cancel
+        // 获取当前任务配置（名称、描述）
+        String currentTaskName = currentTaskType;
+        String currentTaskDescription = null;
+        try {
+            AiTaskConfig currentConfig = configService.getLatestPublished(currentTaskType);
+            if (currentConfig != null) {
+                currentTaskName = currentConfig.getName() != null ? currentConfig.getName() : currentTaskType;
+                currentTaskDescription = currentConfig.getDescription();
+            }
+        } catch (Exception e) {
+            log.debug("[AiChatService] failed to load config for taskType={}: {}", currentTaskType, e.getMessage());
+        }
+
+        // 获取上一轮 AI 回复和最近对话历史
+        String lastAiReply = null;
+        String recentHistory = null;
+        try {
+            List<ChatMessage> history = chatHistoryManager.loadHistory(sessionId);
+            if (history != null && !history.isEmpty()) {
+                // 取最近 6 条消息（3 轮对话）作为上下文
+                int fromIndex = Math.max(0, history.size() - 6);
+                List<ChatMessage> recent = history.subList(fromIndex, history.size());
+                recentHistory = chatHistoryManager.formatForPrompt(recent);
+                // 找最后一条 AI 消息
+                for (int i = recent.size() - 1; i >= 0; i--) {
+                    ChatMessage msg = recent.get(i);
+                    if (msg != null && msg.getRole() != null && "assistant".equalsIgnoreCase(msg.getRole())) {
+                        lastAiReply = msg.getContent();
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[AiChatService] failed to load chat history for session={}: {}", sessionId, e.getMessage());
+        }
+
+        // LLM 判断 continue/switch/cancel（传入完整上下文）
         IntentResult result = intentEngine.recognizeWithContext(
-                message, currentTaskType, currentTaskType, collectedFields);
+                message, currentTaskType, currentTaskName, currentTaskDescription,
+                collectedFields, lastAiReply, recentHistory);
 
         if (result.isCancel()) {
             // 取消当前任务
             cancelTask(currentTaskId);
-            sessionManager.clearTask(session.getSessionId());
-            log.info("[AiChatService] session={} cancelled task={}", session.getSessionId(), currentTaskId);
-            return ChatResponse.fallback("好的，已取消当前任务。有什么可以帮您的？");
+            sessionManager.clearTask(sessionId);
+            log.info("[AiChatService] session={} cancelled task={}", sessionId, currentTaskId);
+            return ChatResponse.fallback("好的，已取消当前任务。有什么可以帮您的？")
+                    .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
         }
 
+        // switch 需要高置信度（>=0.8），否则保守地继续当前任务
         if (result.isSwitch() && result.getTaskType() != null
-                && !result.getTaskType().equals(currentTaskType)) {
+                && !result.getTaskType().equals(currentTaskType)
+                && result.getConfidence() >= 0.8) {
             // 切换到新任务
-            log.info("[AiChatService] session={} switching from {} to {}",
-                    session.getSessionId(), currentTaskType, result.getTaskType());
+            log.info("[AiChatService] session={} switching from {} to {} (confidence={})",
+                    sessionId, currentTaskType, result.getTaskType(), result.getConfidence());
             cancelTask(currentTaskId);
-            return createAndExecuteTask(message, session, result.getTaskType(), context);
+            return createAndExecuteTask(message, session, result.getTaskType(), context, result)
+                    .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
+        }
+
+        if (result.isSwitch() && result.getConfidence() < 0.8) {
+            log.info("[AiChatService] session={} switch intent {} below threshold ({}), continuing current task",
+                    sessionId, result.getTaskType(), result.getConfidence());
         }
 
         // continue：继续当前任务
-        return executeExistingTask(message, session, currentTaskId, currentTaskType, context);
+        return executeExistingTask(message, session, currentTaskId, currentTaskType, context)
+                .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
     }
 
     // ---- 无活跃任务：全新意图识别 ----
@@ -270,7 +312,8 @@ public class DefaultAiChatService implements AiChatService {
             if (candidates != null && !candidates.isEmpty()) {
                 hint += " 您可以尝试：" + String.join("、", candidates);
             }
-            return ChatResponse.fallback(hint);
+            return ChatResponse.fallback(hint)
+                    .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
         }
 
         if (result.isAmbiguous()) {
@@ -278,23 +321,36 @@ public class DefaultAiChatService implements AiChatService {
             return ChatResponse.clarify(
                     "您是想进行以下哪个操作？",
                     result.getCandidates(),
-                    result.getReason());
+                    result.getReason())
+                    .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
         }
 
         // 高置信度，创建任务
-        return createAndExecuteTask(message, session, result.getTaskType(), context);
+        return createAndExecuteTask(message, session, result.getTaskType(), context, result)
+                .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
     }
 
     // ---- 创建并执行任务 ----
 
     private ChatResponse createAndExecuteTask(String message, AiChatSession session,
-                                                String taskType, TaskContext context) {
+                                                String taskType, TaskContext context,
+                                                IntentResult intentResult) {
         // 创建任务（通过 AiTaskEngine 的初始化机制）
         // 注意：AiTaskEngine.execute 内部会处理任务状态的创建/加载
         String taskId = generateTaskId(session.getSessionId(), taskType);
 
         // 绑定任务到会话
         sessionManager.bindTask(session.getSessionId(), taskId, taskType);
+
+        // 将意图识别信息放入 TaskContext，供引擎在任务创建时持久化
+        if (intentResult != null) {
+            if (context == null) {
+                context = TaskContext.builder().data(new LinkedHashMap<>()).build();
+            }
+            context.setIntentReason(intentResult.getReason());
+            context.setIntentConfidence(intentResult.getConfidence());
+            context.setIntentSource(intentResult.getSource() != null ? intentResult.getSource().name() : null);
+        }
 
         // 执行任务
         return executeExistingTask(message, session, taskId, taskType, context);
@@ -396,6 +452,13 @@ public class DefaultAiChatService implements AiChatService {
         // 雪花算法生成全局唯一、趋势递增的任务ID
         // 替代原有的"时间戳+随机数"方案，消除高并发下的ID碰撞风险
         return idGenerator.nextIdString();
+    }
+
+    /**
+     * 将 IntentResult 的匹配来源转为字符串（用于响应中调试展示）。
+     */
+    private String sourceName(IntentResult result) {
+        return result != null && result.getSource() != null ? result.getSource().name() : null;
     }
 
     /**

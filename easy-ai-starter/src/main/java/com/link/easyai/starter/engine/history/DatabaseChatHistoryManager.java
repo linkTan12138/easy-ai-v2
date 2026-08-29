@@ -63,6 +63,32 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
     }
 
     @Override
+    public List<ChatMessage> loadHistoryByTask(String sessionId, String taskId) {
+        if (sessionId == null || sessionId.isBlank() || taskId == null || taskId.isBlank()) {
+            return Collections.emptyList();
+        }
+        try {
+            // 按任务ID查询，只返回该任务的消息（正序），避免跨任务历史污染
+            List<AiChatMessage> taskMessages = messageMapper.selectBySessionIdAndTaskId(sessionId, taskId, maxMessages);
+            if (taskMessages == null || taskMessages.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<ChatMessage> result = new ArrayList<>(taskMessages.size());
+            for (AiChatMessage m : taskMessages) {
+                result.add(ChatMessage.builder()
+                        .role(m.getRole())
+                        .content(m.getContent())
+                        .timestamp(m.getCreateTime() != null ? m.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() : null)
+                        .build());
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("[ChatHistory] failed to load history for session={}, task={}: {}", sessionId, taskId, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
     public void appendUserMessage(String sessionId, String content) {
         appendUserMessage(sessionId, content, null, null, null);
     }

@@ -404,3 +404,32 @@ databaseChangeLog:
             columns:
               - column:
                   name: task_id
+  - changeSet:
+      id: 0011-add-intent-fields-to-task
+      author: easy-ai
+      comment: 增加意图识别字段，记录任务创建时的意图判断理由、置信度和匹配来源，方便调试提示词
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: ai_chat_session_task
+            columnName: intent_reason
+      changes:
+        - addColumn:
+            tableName: ai_chat_session_task
+            columns:
+              - column:
+                  name: intent_reason
+                  type: TEXT
+                  remarks: 意图识别判断理由
+                  afterColumn: ai_task_state
+              - column:
+                  name: intent_confidence
+                  type: DOUBLE
+                  remarks: 意图识别置信度 0.0-1.0
+                  afterColumn: intent_reason
+              - column:
+                  name: intent_source
+                  type: VARCHAR(32)
+                  remarks: 匹配来源：LLM / KEYWORD / FALLBACK / CONTINUE
+                  afterColumn: intent_confidence

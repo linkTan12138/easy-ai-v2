@@ -151,6 +151,12 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         // Entering the pipeline: INITIALIZED (fresh) -> COLLECTING
         if (state.getStatus() == null || state.getStatus() == TaskStatus.INITIALIZED) {
             state.setStatus(TaskStatus.COLLECTING);
+            // 新任务：从 TaskContext 中取出意图识别信息，持久化到任务记录（仅记录一次）
+            if (taskContext != null) {
+                state.setIntentReason(taskContext.getIntentReason());
+                state.setIntentConfidence(taskContext.getIntentConfidence());
+                state.setIntentSource(taskContext.getIntentSource());
+            }
         }
         log.debug("[AiTaskEngine] state loaded: status={}, fields={}", state.getStatus(), state.getFields().size());
 
@@ -185,11 +191,16 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         }
 
         // 4. Build prompt + call LLM + parse extraction
-        // 加载对话历史（滑动窗口），用于多轮上下文理解
+        // 加载当前任务的对话历史（按任务隔离），用于多轮上下文理解
+        // 注意：不使用 session 级别的完整历史，避免上一个任务的历史污染当前任务的字段抽取
         String sessionId = taskContext != null ? taskContext.getSessionId() : null;
-        List<ChatMessage> chatHistory = (sessionId != null && !sessionId.isBlank())
-                ? chatHistoryManager.loadHistory(sessionId)
-                : java.util.Collections.emptyList();
+        String taskIdForHistory = taskContext != null ? taskContext.getTaskId() : null;
+        List<ChatMessage> chatHistory;
+        if (sessionId != null && !sessionId.isBlank() && taskIdForHistory != null && !taskIdForHistory.isBlank()) {
+            chatHistory = chatHistoryManager.loadHistoryByTask(sessionId, taskIdForHistory);
+        } else {
+            chatHistory = java.util.Collections.emptyList();
+        }
         ExtractionResult extraction = extractionEngine.extract(
                 userMessage, pendingFields, config.getFields(), state, chatHistory);
         log.debug("[AiTaskEngine] extraction result: success={}, fields={}",
