@@ -1,0 +1,72 @@
+﻿[INFO] Scanning for projects...
+[WARNING] 
+[WARNING] Some problems were encountered while building the effective model for com.link:easy-ai-starter:jar:1.0.0-SNAPSHOT
+[WARNING] 'dependencies.dependency.(groupId:artifactId:type:classifier)' must be unique: io.micrometer:micrometer-core:jar -> duplicate declaration of version (?) @ line 95, column 21
+[WARNING] 
+[WARNING] It is highly recommended to fix these problems because they threaten the stability of your build.
+[WARNING] 
+[WARNING] For this reason, future Maven versions might no longer support building such malformed projects.
+[WARNING] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] easyAi                                                             [pom]
+[INFO] easy-ai-starter                                                    [jar]
+[INFO] 
+[INFO] --------------------------< com.link:easyAi >---------------------------
+[INFO] Building easyAi 1.0.0-SNAPSHOT                                     [1/2]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ pom ]---------------------------------
+[INFO] 
+[INFO] ----------------------< com.link:easy-ai-starter >----------------------
+[INFO] Building easy-ai-starter 1.0.0-SNAPSHOT                            [2/2]
+[INFO]   from easy-ai-starter\pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ easy-ai-starter ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 9 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ easy-ai-starter ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 152 source files with javac [debug release 17] to target\classes
+[INFO] -------------------------------------------------------------
+[WARNING] COMPILATION WARNING : 
+[INFO] -------------------------------------------------------------
+[WARNING] /C:/Users/18275/Desktop/link/project/easy-ai-v2/easy-ai-starter/src/main/java/com/link/easyai/starter/domain/entity/TbChatSessionTask.java:[6,1] Generating equals/hashCode implementation but without a call to superclass, even though this class does not extend java.lang.Object. If this is intentional, add '@EqualsAndHashCode(callSuper=false)' to your type.
+[INFO] 1 warning
+[INFO] -------------------------------------------------------------
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /C:/Users/18275/Desktop/link/project/easy-ai-v2/easy-ai-starter/src/main/java/com/link/easyai/starter/engine/intent/DefaultIntentEngine.java:[398,18] �Ҳ�������
+  ����:   �� FieldConfig
+  λ��: �� com.link.easyai.starter.engine.intent.DefaultIntentEngine
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary for easyAi 1.0.0-SNAPSHOT:
+[INFO] 
+[INFO] easyAi ............................................. SUCCESS [  0.003 s]
+[INFO] easy-ai-starter .................................... FAILURE [  8.835 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  9.192 s
+[INFO] Finished at: 2026-08-29T11:01:26+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project easy-ai-starter: Compilation failure
+[ERROR] /C:/Users/18275/Desktop/link/project/easy-ai-v2/easy-ai-starter/src/main/java/com/link/easyai/starter/engine/intent/DefaultIntentEngine.java:[398,18] �Ҳ�������
+[ERROR]   ����:   �� FieldConfig
+[ERROR]   λ��: �� com.link.easyai.starter.engine.intent.DefaultIntentEngine
+[ERROR] 
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+[ERROR] 
+[ERROR] After correcting the problems, you can resume the build with the command
+[ERROR]   mvn <args> -rf :easy-ai-starter

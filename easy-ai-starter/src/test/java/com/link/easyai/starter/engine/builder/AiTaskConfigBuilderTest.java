@@ -183,7 +183,7 @@ class AiTaskConfigBuilderTest {
     }
 
     @Test
-    @DisplayName("多依赖 @AiDependsOn → AND 组（两个 exists 叶子）")
+    @DisplayName("@AiPremise 表达式 → AND 组（两个 exists 叶子）")
     void buildsAndPremise() {
         AiTaskConfig config = builder.build(FixtureTaskA.class, validResolver());
         PremiseConfig premise = config.getField("finalRemark").getPremise();

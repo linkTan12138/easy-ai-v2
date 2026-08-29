@@ -12,7 +12,7 @@ import java.lang.annotation.Target;
  * 仅当任务需要多轮对话收集参数时才需要此注解。通过 {@link #type()} 与
  * {@link com.link.easyai.starter.engine.task.AiTask} 一对一关联。
  * <p>
- * 类中的字段通过 {@link AiField}、{@link AiValid}、{@link AiDependsOn} 等注解
+ * 类中的字段通过 {@link AiField}、{@link AiValid}、{@link AiPremise} 等注解
  * 定义参数收集规则。
  * <p>
  * 示例：

@@ -48,7 +48,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * All {@code @AiTask} classes found by {@link AiAnnotationScanner} are built and
  * validated once on {@link ContextRefreshedEvent} (after every validator/action
  * bean is ready). Structural problems — duplicate taskType, unknown validator
- * beans, dangling {@code @AiDependsOn} references, ... — fail the startup with the
+ * beans, dangling {@code @AiPremise} references, ... — fail the startup with the
  * complete list of errors. A database config shadowed by an annotation config is
  * logged as a warning, not an error (that is the intended migration path).
  * <p>

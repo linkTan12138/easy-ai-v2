@@ -1,8 +1,8 @@
 package com.link.easyai.starter.engine.builder.fixtures.broken;
 
-import com.link.easyai.starter.engine.annotation.AiDependsOn;
 import com.link.easyai.starter.engine.annotation.AiField;
 import com.link.easyai.starter.engine.annotation.AiMapping;
+import com.link.easyai.starter.engine.annotation.AiPremise;
 import com.link.easyai.starter.engine.annotation.AiTask;
 import com.link.easyai.starter.engine.annotation.AiValid;
 import com.link.easyai.starter.engine.annotation.Mapping;
@@ -19,12 +19,12 @@ public class BrokenTask {
     @AiValid(by = UnregisteredValidator.class)
     private String a;
 
-    @AiDependsOn("noSuchField")
+    @AiPremise("noSuchField != null")
     private String b;
 
     @AiMapping(@Mapping(target = "c", source = "$wrong"))
     private String c;
 
-    @AiDependsOn("d")
+    @AiPremise("d != null")
     private String d;
 }

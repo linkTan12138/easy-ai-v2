@@ -1,9 +1,9 @@
 package com.link.easyai.starter.engine.builder;
 
-import com.link.easyai.starter.engine.annotation.AiDependsOn;
 import com.link.easyai.starter.engine.annotation.AiExtract;
 import com.link.easyai.starter.engine.annotation.AiField;
 import com.link.easyai.starter.engine.annotation.AiMapping;
+import com.link.easyai.starter.engine.annotation.AiPremise;
 import com.link.easyai.starter.engine.annotation.AiTaskParam;
 import com.link.easyai.starter.engine.annotation.AiValid;
 import com.link.easyai.starter.engine.annotation.Mapping;
@@ -19,6 +19,7 @@ import com.link.easyai.starter.engine.config.TaskExecuteConfig;
 import com.link.easyai.starter.engine.config.ValidationConfig;
 import com.link.easyai.starter.engine.config.ValidatorDefinition;
 import com.link.easyai.starter.engine.exception.ConfigValidationException;
+import com.link.easyai.starter.engine.premise.PremiseExpressionParser;
 import com.link.easyai.starter.engine.task.AiTask;
 import com.link.easyai.starter.engine.task.TaskExecutor;
 import com.link.easyai.starter.engine.validation.FieldValidator;
@@ -144,9 +145,9 @@ public class AiTaskConfigBuilder {
             fields.add(definition);
         }
 
-        // 跨字段校验：dependsOn 引用
+        // 跨字段校验：premise 表达式引用
         for (FieldDefinition definition : fields) {
-            validateDependsOn(paramClass, definition, codes, errors);
+            validatePremise(paramClass, definition, codes, errors);
         }
 
         if (!errors.isEmpty()) {
@@ -249,9 +250,16 @@ public class AiTaskConfigBuilder {
                 ? null
                 : ValidationConfig.builder().validators(validators).build();
 
-        // ---- premise（简单依赖）----
-        AiDependsOn dependsOn = javaField.getAnnotation(AiDependsOn.class);
-        PremiseConfig premise = buildPremise(dependsOn);
+        // ---- premise（前提条件表达式）----
+        AiPremise premiseAnnotation = javaField.getAnnotation(AiPremise.class);
+        PremiseConfig premise = null;
+        if (premiseAnnotation != null && !isBlank(premiseAnnotation.value())) {
+            try {
+                premise = new PremiseExpressionParser(premiseAnnotation.value().trim()).parse();
+            } catch (PremiseExpressionParser.PremiseParseException e) {
+                errors.add(String.format("字段 '%s' 的 @AiPremise 表达式解析失败: %s", code, e.getMessage()));
+            }
+        }
 
         // ---- normalization ----
         NormalizationConfig normalization = aiField != null && !isBlank(aiField.normalize())
@@ -305,48 +313,49 @@ public class AiTaskConfigBuilder {
     }
 
     /**
-     * 从 @AiDependsOn 构建 premise 配置：
-     * 单依赖 → 裸 "exists" 叶子；多依赖 → AND 组合。
+     * 从 @AiPremise 表达式中收集所有引用的字段名，用于校验。
      */
-    private PremiseConfig buildPremise(AiDependsOn dependsOn) {
-        if (dependsOn == null || dependsOn.value().length == 0) {
-            return null;
+    private Set<String> collectPremiseFields(String expression) {
+        Set<String> fields = new HashSet<>();
+        if (isBlank(expression)) {
+            return fields;
         }
-        if (dependsOn.value().length == 1) {
-            return existsLeaf(dependsOn.value()[0]);
+        // 简单提取：匹配标识符，排除关键字和 null
+        String[] tokens = expression.split("[^a-zA-Z0-9_]+");
+        Set<String> keywords = Set.of("AND", "OR", "NOT", "IN", "NULL", "true", "false");
+        for (String token : tokens) {
+            if (!token.isEmpty() && !keywords.contains(token.toUpperCase()) &&
+                    !Character.isDigit(token.charAt(0))) {
+                fields.add(token);
+            }
         }
-        List<PremiseConfig> conditions = new ArrayList<>(dependsOn.value().length);
-        for (String field : dependsOn.value()) {
-            conditions.add(existsLeaf(field));
-        }
-        return PremiseConfig.builder().operator("AND").conditions(conditions).build();
+        return fields;
     }
 
     private PremiseConfig existsLeaf(String field) {
         return PremiseConfig.builder().field(field).conditionOperator("exists").build();
     }
 
-    private void validateDependsOn(Class<?> paramClass,
-                                   FieldDefinition definition,
-                                   Set<String> codes,
-                                   List<String> errors) {
-        AiDependsOn dependsOn = null;
+    private void validatePremise(Class<?> paramClass,
+                                 FieldDefinition definition,
+                                 Set<String> codes,
+                                 List<String> errors) {
+        AiPremise premise = null;
         try {
             Field javaField = paramClass.getDeclaredField(definition.getCode());
-            dependsOn = javaField.getAnnotation(AiDependsOn.class);
+            premise = javaField.getAnnotation(AiPremise.class);
         } catch (NoSuchFieldException ignored) {
             // 不可能发生 — definition 就是从这个字段构建的
         }
-        if (dependsOn == null) {
+        if (premise == null || isBlank(premise.value())) {
             return;
         }
-        for (String reference : dependsOn.value()) {
-            if (isBlank(reference)) {
-                errors.add(String.format("字段 '%s' 的 @AiDependsOn 引用了空字段名", definition.getCode()));
-            } else if (reference.equals(definition.getCode())) {
-                errors.add(String.format("字段 '%s' 的 @AiDependsOn 不能依赖自己", definition.getCode()));
+        Set<String> referencedFields = collectPremiseFields(premise.value());
+        for (String reference : referencedFields) {
+            if (reference.equals(definition.getCode())) {
+                errors.add(String.format("字段 '%s' 的 @AiPremise 不能引用自己", definition.getCode()));
             } else if (!codes.contains(reference)) {
-                errors.add(String.format("字段 '%s' 的 @AiDependsOn 引用了不存在的字段 '%s'",
+                errors.add(String.format("字段 '%s' 的 @AiPremise 引用了不存在的字段 '%s'",
                         definition.getCode(), reference));
             }
         }

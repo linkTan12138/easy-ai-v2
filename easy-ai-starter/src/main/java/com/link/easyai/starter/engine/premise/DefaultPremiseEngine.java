@@ -44,6 +44,15 @@ public class DefaultPremiseEngine implements PremiseEngine, PremiseEvaluator {
 
         String operator = config.getOperator() != null ? config.getOperator().toUpperCase() : "AND";
 
+        // NOT 操作符：单操作数取反
+        if ("NOT".equals(operator)) {
+            if (conditions == null || conditions.size() != 1) {
+                log.warn("NOT 操作符需要恰好一个子条件，实际: {}", conditions == null ? 0 : conditions.size());
+                return true;
+            }
+            return !evaluate(conditions.get(0), state);
+        }
+
         for (PremiseConfig subConfig : conditions) {
             boolean result = evaluate(subConfig, state);
             if ("AND".equals(operator) && !result) {

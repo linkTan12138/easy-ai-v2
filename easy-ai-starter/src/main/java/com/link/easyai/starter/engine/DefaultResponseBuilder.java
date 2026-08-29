@@ -187,7 +187,7 @@ public class DefaultResponseBuilder implements ResponseBuilder {
         // Check each required field — if not completed and premise is met, it's needed
         for (String code : requiredCodes) {
             FieldDefinition fd = config.getField(code);
-            // Skip fields whose premise is not yet satisfied (e.g. @AiDependsOn)
+            // Skip fields whose premise is not yet satisfied (e.g. @AiPremise)
             if (fd != null && !premiseEngine.evaluate(fd.getPremise(), state)) {
                 continue;
             }

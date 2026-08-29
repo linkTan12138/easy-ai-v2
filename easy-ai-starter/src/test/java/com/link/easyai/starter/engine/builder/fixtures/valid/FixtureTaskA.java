@@ -1,9 +1,9 @@
 package com.link.easyai.starter.engine.builder.fixtures.valid;
 
-import com.link.easyai.starter.engine.annotation.AiDependsOn;
 import com.link.easyai.starter.engine.annotation.AiExtract;
 import com.link.easyai.starter.engine.annotation.AiField;
 import com.link.easyai.starter.engine.annotation.AiMapping;
+import com.link.easyai.starter.engine.annotation.AiPremise;
 import com.link.easyai.starter.engine.annotation.AiTask;
 import com.link.easyai.starter.engine.annotation.AiValid;
 import com.link.easyai.starter.engine.annotation.Mapping;
@@ -46,7 +46,7 @@ public class FixtureTaskA {
     @AiField(name = "状态")
     private FixtureStatus status;
 
-    @AiDependsOn({"customerName", "priority"})
+    @AiPremise("customerName != null AND priority != null")
     @AiMapping({
             @Mapping(target = "finalRemark", source = "$value"),
             @Mapping(target = "rawRemark", source = "$rawValue"),
