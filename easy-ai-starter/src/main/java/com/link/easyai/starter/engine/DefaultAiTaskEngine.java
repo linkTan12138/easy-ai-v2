@@ -19,8 +19,6 @@ import com.link.easyai.starter.engine.state.TaskStatus;
 import com.link.easyai.starter.engine.validation.ValidationEngine;
 import com.link.easyai.starter.engine.observability.EngineMdcUtils;
 import com.link.easyai.starter.engine.observability.EngineMetrics;
-import com.link.easyai.starter.config.LargeLanguageModelHolder;
-import com.link.easyai.starter.service.LargeLanguageModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,7 +63,6 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
     private final CompletionEngine completionEngine;
     private final TaskExecuteEngine taskExecuteEngine;
     private final ResponseBuilder responseBuilder;
-    private final LargeLanguageModelHolder llmHolder;
     private final EngineMetrics metrics;
     private final AiTaskProperties properties;
     private final ChatHistoryManager chatHistoryManager;
@@ -81,7 +78,6 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
                                CompletionEngine completionEngine,
                                TaskExecuteEngine taskExecuteEngine,
                                ResponseBuilder responseBuilder,
-                               LargeLanguageModelHolder llmHolder,
                                EngineMetrics metrics,
                                AiTaskProperties properties,
                                ChatHistoryManager chatHistoryManager) {
@@ -95,7 +91,6 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         this.completionEngine = completionEngine;
         this.taskExecuteEngine = taskExecuteEngine;
         this.responseBuilder = responseBuilder;
-        this.llmHolder = llmHolder;
         this.metrics = metrics;
         this.properties = properties;
         this.chatHistoryManager = chatHistoryManager;
@@ -190,14 +185,13 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         }
 
         // 4. Build prompt + call LLM + parse extraction
-        LargeLanguageModel llm = llmHolder != null ? llmHolder.getLargeLanguageModel() : null;
         // 加载对话历史（滑动窗口），用于多轮上下文理解
         String sessionId = taskContext != null ? taskContext.getSessionId() : null;
         List<ChatMessage> chatHistory = (sessionId != null && !sessionId.isBlank())
                 ? chatHistoryManager.loadHistory(sessionId)
                 : java.util.Collections.emptyList();
         ExtractionResult extraction = extractionEngine.extract(
-                userMessage, pendingFields, config.getFields(), state, chatHistory, llm);
+                userMessage, pendingFields, config.getFields(), state, chatHistory);
         log.debug("[AiTaskEngine] extraction result: success={}, fields={}",
                 extraction.isSuccess(), extraction.getFields());
 

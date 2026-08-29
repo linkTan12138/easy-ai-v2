@@ -1,7 +1,7 @@
 package com.link.easyai.starter.engine.extraction;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.link.easyai.starter.config.LargeLanguageModelHolder;
+import com.link.easyai.starter.config.LLMlHolder;
 import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.config.FieldType;
 import com.link.easyai.starter.engine.llm.LlmCallException;
@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 class DefaultExtractionEngineTest {
 
     private LlmClient llmClient;
-    private LargeLanguageModelHolder llmHolder;
+    private LLMlHolder llmHolder;
     private DefaultExtractionEngine engine;
     private TaskState state;
 
@@ -40,7 +40,7 @@ class DefaultExtractionEngineTest {
     @BeforeEach
     void setUp() {
         llmClient = mock(LlmClient.class);
-        llmHolder = mock(LargeLanguageModelHolder.class);
+        llmHolder = mock(LLMlHolder.class);
         when(llmHolder.getActiveModelName()).thenReturn("kimi");
         engine = new DefaultExtractionEngine(new DefaultPromptBuilder(), new ObjectMapper(), llmClient, llmHolder);
         Map<String, FieldState> fields = new HashMap<>();

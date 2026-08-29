@@ -1,8 +1,10 @@
 package com.link.easyai.starter.engine.llm;
 
 import com.link.easyai.starter.engine.AiTaskProperties;
-import com.link.easyai.starter.service.LargeLanguageModel;
-import com.link.easyai.starter.service.LargeLanguageModelFactory;
+import com.link.easyai.starter.llm.LLMConfig;
+import com.link.easyai.starter.llm.LLMProvider;
+import com.link.easyai.starter.llm.LLMProviderFactory;
+import com.link.easyai.starter.llm.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Resilient LLM client with retry, exponential backoff, rate limiting, circuit breaking, and fallback models.
  * <p>
- * Wraps {@link LargeLanguageModel} calls with:
+ * Wraps {@link com.link.easyai.starter.llm.LLMProvider} calls with:
  * <ul>
  *   <li><b>Rate Limiting:</b> 滑动时间窗口限流，超过 QPS 限制时快速失败</li>
  *   <li><b>Circuit Breaking:</b> 连续失败超过阈值时熔断，熔断期间快速失败，一段时间后自动恢复</li>
@@ -31,7 +33,8 @@ public class LlmClient {
 
     private static final Logger log = LoggerFactory.getLogger(LlmClient.class);
 
-    private final LargeLanguageModelFactory llmFactory;
+    private final LLMProviderFactory llmFactory;
+    private final LLMConfig llmConfig;
     private final AiTaskProperties properties;
 
     // ---- 限流：滑动时间窗口 ----
@@ -43,8 +46,9 @@ public class LlmClient {
     private final AtomicLong circuitOpenUntil = new AtomicLong(0);
 
     @Autowired
-    public LlmClient(LargeLanguageModelFactory llmFactory, AiTaskProperties properties) {
+    public LlmClient(LLMProviderFactory llmFactory, LLMConfig llmConfig, AiTaskProperties properties) {
         this.llmFactory = llmFactory;
+        this.llmConfig = llmConfig;
         this.properties = properties;
         log.info("[LlmClient] initialized with built-in rate limiting + circuit breaking");
     }
@@ -97,14 +101,19 @@ public class LlmClient {
         // 2. 限流检查
         checkRateLimit();
 
-        LargeLanguageModel model = resolveModel(modelName);
+        LLMProvider model = resolveModel(modelName);
         int maxRetries = config.getMaxRetries();
         long backoff = config.getInitialBackoffMs();
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 log.debug("[LlmClient] calling model '{}' (attempt {}/{})", modelName, attempt, maxRetries);
-                String response = model.chatCompletion(system, user);
+                List<Message> messages = new ArrayList<>();
+                if (system != null && !system.isBlank()) {
+                    messages.add(Message.system(system));
+                }
+                messages.add(Message.user(user));
+                String response = model.chat(messages, llmConfig);
                 if (response == null || response.isBlank()) {
                     throw new LlmCallException("Model returned empty response", true);
                 }
@@ -207,8 +216,8 @@ public class LlmClient {
 
     // ---- 辅助方法 ----
 
-    private LargeLanguageModel resolveModel(String modelName) {
-        return llmFactory.getLargeLanguageModel(modelName);
+    private LLMProvider resolveModel(String modelName) {
+        return llmFactory.create(modelName);
     }
 
     private LlmCallException classifyException(Exception e) {

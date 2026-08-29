@@ -1,7 +1,7 @@
 package com.link.easyai.starter.engine.intent;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.link.easyai.starter.config.LargeLanguageModelHolder;
+import com.link.easyai.starter.config.LLMlHolder;
 import com.link.easyai.starter.engine.AnnotationAiTaskConfigService;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
 import com.link.easyai.starter.engine.llm.LlmCallException;
@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * 默认意图识别引擎实现。
@@ -37,12 +36,12 @@ public class DefaultIntentEngine implements IntentEngine {
 
     private final AnnotationAiTaskConfigService configService;
     private final LlmClient llmClient;
-    private final LargeLanguageModelHolder llmHolder;
+    private final LLMlHolder llmHolder;
 
     @Autowired
     public DefaultIntentEngine(AnnotationAiTaskConfigService configService,
                                 LlmClient llmClient,
-                                LargeLanguageModelHolder llmHolder) {
+                                LLMlHolder llmHolder) {
         this.configService = configService;
         this.llmClient = llmClient;
         this.llmHolder = llmHolder;
@@ -138,7 +137,7 @@ public class DefaultIntentEngine implements IntentEngine {
         try {
             String prompt = buildContinuityPrompt(userMessage, lastTaskType, lastTaskName,
                     lastCollectedFields, lastAiReply);
-            String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "kimi";
+            String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "deepseek";
             String response = llmClient.chatCompletion(primaryModel, prompt, userMessage);
 
             if (response == null || response.isBlank()) {
@@ -161,7 +160,7 @@ public class DefaultIntentEngine implements IntentEngine {
 
     private IntentResult classifyByLlm(String userMessage, Map<String, AiTaskConfig> configs) {
         String prompt = buildClassificationPrompt(userMessage, configs);
-        String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "kimi";
+        String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "deepseek";
 
         String response;
         try {
@@ -218,7 +217,7 @@ public class DefaultIntentEngine implements IntentEngine {
                                                     Map<String, AiTaskConfig> configs) {
         String prompt = buildContextPrompt(userMessage, currentTaskType, currentTaskName,
                 collectedFields, configs);
-        String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "kimi";
+        String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "deepseek";
 
         String response;
         try {

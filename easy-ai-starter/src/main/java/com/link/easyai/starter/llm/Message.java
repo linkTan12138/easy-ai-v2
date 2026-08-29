@@ -20,6 +20,21 @@ public class Message {
         this.content = content;
     }
 
+    /** 创建 system 角色消息 */
+    public static Message system(String content) {
+        return new Message("system", content);
+    }
+
+    /** 创建 user 角色消息 */
+    public static Message user(String content) {
+        return new Message("user", content);
+    }
+
+    /** 创建 assistant 角色消息 */
+    public static Message assistant(String content) {
+        return new Message("assistant", content);
+    }
+
     public String getRole() {
         return role;
     }

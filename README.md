@@ -136,23 +136,21 @@ easy-ai:
     annotation:
       enabled: true   # 开启注解扫描
 
-# 大模型配置（三选一，通过 active 切换）
-large-language-model:
-  active: deepseek
-  deepseek:
-    api:
-      key: sk-your-deepseek-key
-      url: https://api.deepseek.com/chat/completions
+# LLM 配置（通过 provider 切换默认模型，providers 中可配置多个用于 fallback）
+llm:
+  provider: deepseek
+  providers:
+    deepseek:
+      api-key: sk-your-deepseek-key
+      endpoint: https://api.deepseek.com
       model: deepseek-chat
-  kimi:
-    api:
-      key: sk-your-kimi-key
-      url: https://api.moonshot.cn/v1/chat/completions
+    kimi:
+      api-key: sk-your-kimi-key
+      endpoint: https://api.moonshot.cn/v1
       model: kimi-k2-turbo-preview
-  doubao:
-    api:
-      key: your-doubao-key
-      url: https://ark.cn-beijing.volces.com/api/v3/chat/completions
+    doubao:
+      api-key: your-doubao-key
+      endpoint: https://ark.cn-beijing.volces.com/api/v3
       model: doubao-seed-1-6-251015
 ```
 
@@ -443,17 +441,21 @@ public class LogisticsQueryTask implements TaskExecutor {
 ### LLM 配置
 
 ```yaml
-large-language-model:
-  active: deepseek  # 当前激活的模型
-  deepseek:
-    api:
-      key: sk-xxx
-      url: https://api.deepseek.com/chat/completions
+llm:
+  provider: deepseek  # 默认激活的模型
+  providers:
+    deepseek:
+      api-key: sk-xxx
+      endpoint: https://api.deepseek.com  # base URL，不含 /chat/completions
       model: deepseek-chat
+    kimi:
+      api-key: sk-xxx
+      endpoint: https://api.moonshot.cn/v1
+      model: kimi-k2-turbo-preview
 ```
 
-> 支持 `large-language-model.{provider}.api.key/url/model` 旧格式，
-> 也支持 `llm.providers.{provider}.api-key/endpoint/model` 新格式。
+> 内置支持 `kimi` / `deepseek` / `doubao` / `openai_compatible` 四种 provider，
+> 也支持通过完整类名或 Java SPI 接入自定义 LLM 实现。
 
 ### 框架配置
 

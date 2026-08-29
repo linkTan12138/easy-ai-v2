@@ -3,7 +3,6 @@ package com.link.easyai.starter.engine.extraction;
 import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.history.ChatMessage;
 import com.link.easyai.starter.engine.state.TaskState;
-import com.link.easyai.starter.service.LargeLanguageModel;
 
 import java.util.List;
 
@@ -28,13 +27,11 @@ public interface ExtractionEngine {
      * @param state          current task state (for context)
      * @param chatHistory    conversation history sliding window, for multi-turn
      *                       context understanding. May be empty.
-     * @param llm            the LLM to call
      * @return extraction result
      */
     ExtractionResult extract(String userMessage,
                               List<FieldDefinition> pendingFields,
                               List<FieldDefinition> allFields,
                               TaskState state,
-                              List<ChatMessage> chatHistory,
-                              LargeLanguageModel llm);
+                              List<ChatMessage> chatHistory);
 }

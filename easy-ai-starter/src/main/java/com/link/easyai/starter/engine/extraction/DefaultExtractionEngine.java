@@ -2,7 +2,6 @@ package com.link.easyai.starter.engine.extraction;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.link.easyai.starter.config.LargeLanguageModelHolder;
 import com.link.easyai.starter.engine.config.FieldDefinition;
 import com.link.easyai.starter.engine.history.ChatMessage;
 import com.link.easyai.starter.engine.llm.LlmCallException;
@@ -10,7 +9,7 @@ import com.link.easyai.starter.engine.llm.LlmClient;
 import com.link.easyai.starter.engine.llm.RobustJsonParser;
 import com.link.easyai.starter.engine.state.FieldState;
 import com.link.easyai.starter.engine.state.TaskState;
-import com.link.easyai.starter.service.LargeLanguageModel;
+import com.link.easyai.starter.llm.LLMConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,17 +43,17 @@ public class DefaultExtractionEngine implements ExtractionEngine {
     private final PromptBuilder promptBuilder;
     private final ObjectMapper objectMapper;
     private final LlmClient llmClient;
-    private final LargeLanguageModelHolder llmHolder;
+    private final LLMConfig llmConfig;
 
     @Autowired
     public DefaultExtractionEngine(PromptBuilder promptBuilder,
                                     ObjectMapper objectMapper,
                                     LlmClient llmClient,
-                                    LargeLanguageModelHolder llmHolder) {
+                                    LLMConfig llmConfig) {
         this.promptBuilder = promptBuilder;
         this.objectMapper = objectMapper;
         this.llmClient = llmClient;
-        this.llmHolder = llmHolder;
+        this.llmConfig = llmConfig;
     }
 
     @Override
@@ -62,8 +61,7 @@ public class DefaultExtractionEngine implements ExtractionEngine {
                                     List<FieldDefinition> pendingFields,
                                     List<FieldDefinition> allFields,
                                     TaskState state,
-                                    List<ChatMessage> chatHistory,
-                                    LargeLanguageModel llm) {
+                                    List<ChatMessage> chatHistory) {
         if (userMessage == null || userMessage.isBlank()) {
             return ExtractionResult.builder()
                     .success(true)
@@ -77,7 +75,7 @@ public class DefaultExtractionEngine implements ExtractionEngine {
 
         // 2. Call LLM via resilient client (retry + fallback)
         String rawResponse;
-        String primaryModel = llmHolder != null ? llmHolder.getActiveModelName() : "kimi";
+        String primaryModel = llmConfig != null ? llmConfig.getProvider() : "deepseek";
         try {
             rawResponse = llmClient.chatCompletion(primaryModel, systemPrompt, userMessage);
         } catch (LlmCallException e) {
