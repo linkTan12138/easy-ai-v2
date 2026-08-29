@@ -87,6 +87,13 @@ public class AiTaskProperties {
 
         /** Whether to enable prompt injection detection. */
         private boolean injectionDetectionEnabled = true;
+
+        /**
+         * 是否开启 LLM 调用详细日志。
+         * 开启后每次 LLM 调用都会输出完整的请求消息（system + user）和响应内容，
+         * 便于调试提示词和排查问题。生产环境建议关闭。
+         */
+        private boolean logEnabled = false;
     }
 
     @Data

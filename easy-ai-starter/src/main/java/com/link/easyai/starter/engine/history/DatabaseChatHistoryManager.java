@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -41,7 +42,7 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             return Collections.emptyList();
         }
         try {
-            // 查询最近 N 条消息（倒序），然后反转成正序
+            // 查询最近 N 条消息（SQL 按 create_time DESC，最新的在前面）
             List<AiChatMessage> recent = messageMapper.selectRecentBySessionId(sessionId, maxMessages);
             if (recent == null || recent.isEmpty()) {
                 return Collections.emptyList();
@@ -49,12 +50,14 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             List<ChatMessage> result = new ArrayList<>(recent.size());
             for (int i = recent.size() - 1; i >= 0; i--) {
                 AiChatMessage m = recent.get(i);
-                result.add(ChatMessage.builder()
-                        .role(m.getRole())
-                        .content(m.getContent())
-                        .timestamp(m.getCreateTime() != null ? m.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() : null)
-                        .build());
+                result.add(toChatMessage(m));
             }
+            // 双重保障：按时间戳升序排序，确保历史消息是正序（最旧的在前面，最新的在后面）
+            result.sort(Comparator.comparingLong(m -> m.getTimestamp() != null ? m.getTimestamp() : 0L));
+            log.debug("[ChatHistory] loaded {} messages for session={}, first={}, last={}",
+                    result.size(), sessionId,
+                    result.isEmpty() ? "none" : result.get(0).getRole(),
+                    result.isEmpty() ? "none" : result.get(result.size() - 1).getRole());
             return result;
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to load history for session={}: {}", sessionId, e.getMessage());
@@ -68,19 +71,17 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             return Collections.emptyList();
         }
         try {
-            // 按任务ID查询，只返回该任务的消息（正序），避免跨任务历史污染
+            // 按任务ID查询，只返回该任务的消息（SQL 按 create_time ASC）
             List<AiChatMessage> taskMessages = messageMapper.selectBySessionIdAndTaskId(sessionId, taskId, maxMessages);
             if (taskMessages == null || taskMessages.isEmpty()) {
                 return Collections.emptyList();
             }
             List<ChatMessage> result = new ArrayList<>(taskMessages.size());
             for (AiChatMessage m : taskMessages) {
-                result.add(ChatMessage.builder()
-                        .role(m.getRole())
-                        .content(m.getContent())
-                        .timestamp(m.getCreateTime() != null ? m.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() : null)
-                        .build());
+                result.add(toChatMessage(m));
             }
+            // 双重保障：按时间戳升序排序
+            result.sort(Comparator.comparingLong(m -> m.getTimestamp() != null ? m.getTimestamp() : 0L));
             return result;
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to load history for session={}, task={}: {}", sessionId, taskId, e.getMessage());
@@ -213,5 +214,18 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             log.warn("[ChatHistory] failed to count messages for session={}: {}", sessionId, e.getMessage());
             return 0;
         }
+    }
+
+    /**
+     * 将 AiChatMessage 实体转换为 ChatMessage DTO。
+     */
+    private ChatMessage toChatMessage(AiChatMessage m) {
+        return ChatMessage.builder()
+                .role(m.getRole())
+                .content(m.getContent())
+                .timestamp(m.getCreateTime() != null
+                        ? m.getCreateTime().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        : null)
+                .build();
     }
 }

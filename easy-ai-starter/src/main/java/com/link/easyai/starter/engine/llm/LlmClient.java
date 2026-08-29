@@ -113,11 +113,26 @@ public class LlmClient {
                     messages.add(Message.system(system));
                 }
                 messages.add(Message.user(user));
-                log.debug("[LlmClient] messages: count={}, user='{}'", messages.size(), user);
+
+                // 详细日志开关：输出完整的请求消息（system + user）
+                if (config.isLogEnabled()) {
+                    log.info("[LLM 请求] model={}, attempt={}/{}", modelName, attempt, maxRetries);
+                    for (int i = 0; i < messages.size(); i++) {
+                        Message msg = messages.get(i);
+                        log.info("[LLM 请求] [{}] {}", msg.getRole(), msg.getContent());
+                    }
+                }
+
                 String response = model.chat(messages, llmConfig);
                 if (response == null || response.isBlank()) {
                     throw new LlmCallException("Model returned empty response", true);
                 }
+
+                // 详细日志开关：输出完整的响应内容
+                if (config.isLogEnabled()) {
+                    log.info("[LLM 响应] model={}, 响应内容: {}", modelName, response);
+                }
+
                 // 成功：重置连续失败计数
                 consecutiveFailures.set(0);
                 return response;
