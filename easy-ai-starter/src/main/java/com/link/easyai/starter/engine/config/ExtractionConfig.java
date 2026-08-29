@@ -33,4 +33,10 @@ public class ExtractionConfig {
 
     /** Extra params for custom extraction strategies */
     private Map<String, Object> params;
+
+    /**
+     * 该字段抽取时需要注入的上下文变量名列表。
+     * 变量由 ExtractionContextProvider 提供，只注入声明的变量。
+     */
+    private List<String> contextVars;
 }

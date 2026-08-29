@@ -32,4 +32,13 @@ public @interface AiExtract {
      * Extraction rules / constraints, sent to the LLM.
      */
     String[] rules() default {};
+
+    /**
+     * 该字段抽取时需要注入的上下文变量名列表。
+     * 变量由 {@link com.link.easyai.starter.engine.extraction.ExtractionContextProvider}
+     * 提供，只注入声明的变量，未声明的不会出现在 prompt 中。
+     * <p>
+     * 示例：{@code contextVars = {"currentDate", "currentUser"}}
+     */
+    String[] contextVars() default {};
 }

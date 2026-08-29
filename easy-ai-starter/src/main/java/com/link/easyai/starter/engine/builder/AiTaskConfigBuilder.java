@@ -208,10 +208,14 @@ public class AiTaskConfigBuilder {
         AiExtract extract = javaField.getAnnotation(AiExtract.class);
         ExtractionConfig extraction = null;
         if (extract != null) {
+            List<String> contextVars = extract.contextVars().length > 0
+                    ? List.of(extract.contextVars())
+                    : null;
             extraction = ExtractionConfig.builder()
                     .description(extract.description())
                     .examples(List.of(extract.examples()))
                     .rules(List.of(extract.rules()))
+                    .contextVars(contextVars)
                     // 约定：可选字段允许 LLM 输出中缺失
                     .allowEmpty(!required)
                     .build();

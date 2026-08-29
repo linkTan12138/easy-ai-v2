@@ -12,6 +12,9 @@ import java.util.List;
  * Replaces the old hardcoded SYS_PROMPT in {@link com.link.easyai.starter.service.AiSceneProcessor}.
  * Only sends fields that are currently pending (not yet collected), rather than
  * all field definitions at once.
+ * <p>
+ * 支持通过 {@link ExtractionContextProvider} 注入上下文变量（如当前日期、业务专有名词），
+ * 只注入字段在 {@code @AiExtract(contextVars = {...})} 中声明的变量。
  */
 public interface PromptBuilder {
 

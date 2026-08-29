@@ -91,6 +91,8 @@ public class DefaultExtractionEngine implements ExtractionEngine {
             return ExtractionResult.fail("未能识别消息内容，请换种说法再试一次", rawResponse);
         }
 
+        log.debug("[ExtractionEngine] LLM raw response: {}", rawResponse);
+
         // 3. Parse JSON with robust parser (tolerates markdown fences, etc.)
         JsonNode root;
         try {

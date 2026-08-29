@@ -113,6 +113,7 @@ public class LlmClient {
                     messages.add(Message.system(system));
                 }
                 messages.add(Message.user(user));
+                log.debug("[LlmClient] messages: count={}, user='{}'", messages.size(), user);
                 String response = model.chat(messages, llmConfig);
                 if (response == null || response.isBlank()) {
                     throw new LlmCallException("Model returned empty response", true);
