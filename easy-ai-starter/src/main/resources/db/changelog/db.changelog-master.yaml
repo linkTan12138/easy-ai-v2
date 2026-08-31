@@ -486,3 +486,28 @@ databaseChangeLog:
                   name: tenant_id
               - column:
                   name: session_id
+  - changeSet:
+      id: 0014-config-tenant-scope
+      author: easy-ai
+      comment: ai_task_config 支持租户隔离：新增 tenant_id（NULL=全局默认模板，非空=租户私有覆盖），唯一键扩展为 (tenant_id, task_type, version)。数据库配置自此仅承载字段提取规则覆盖，不再存完整任务结构。
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: ai_task_config
+            columnName: tenant_id
+      changes:
+        - addColumn:
+            tableName: ai_task_config
+            columns:
+              - column:
+                  name: tenant_id
+                  type: VARCHAR(64)
+                  remarks: 租户ID；NULL 表示全局默认模板
+        - dropUniqueConstraint:
+            tableName: ai_task_config
+            constraintName: uk_task_type_version
+        - addUniqueConstraint:
+            tableName: ai_task_config
+            columnNames: tenant_id, task_type, version
+            constraintName: uk_tenant_task_version

@@ -118,8 +118,8 @@ class DefaultAiTaskEngineTest {
         when(stateManager.load(TASK_ID, TASK_TYPE, VERSION)).thenReturn(state);
         // lenient: when the state already carries a bound configVersion the
         // engine never asks for the latest version
-        org.mockito.Mockito.lenient().when(configService.getLatestVersion(TASK_TYPE)).thenReturn(VERSION);
-        when(configService.get(TASK_TYPE, VERSION)).thenReturn(config);
+        org.mockito.Mockito.lenient().when(configService.getLatestVersion(TASK_TYPE, null)).thenReturn(VERSION);
+        when(configService.get(TASK_TYPE, VERSION, null)).thenReturn(config);
     }
 
     // ---------- pipeline order ----------
@@ -310,7 +310,7 @@ class DefaultAiTaskEngineTest {
         TaskState state = midConversationState(); // bound to VERSION=3
         when(stateManager.load(TASK_ID, TASK_TYPE, null)).thenReturn(state);
         when(stateManager.load(TASK_ID, TASK_TYPE, VERSION)).thenReturn(state);
-        when(configService.get(TASK_TYPE, VERSION)).thenReturn(config);
+        when(configService.get(TASK_TYPE, VERSION, null)).thenReturn(config);
 
         when(fieldSelector.select(config, state)).thenReturn(List.of());
         when(completionEngine.completed(config, state)).thenReturn(false);
@@ -318,8 +318,8 @@ class DefaultAiTaskEngineTest {
 
         engine.execute(TASK_TYPE, TASK_ID, "x", null);
 
-        verify(configService, never()).getLatestVersion(anyString());
-        verify(configService).get(TASK_TYPE, VERSION);
+        verify(configService, never()).getLatestVersion(anyString(), any());
+        verify(configService).get(TASK_TYPE, VERSION, null);
     }
 
     // ---------- exception safety net ----------
@@ -335,8 +335,8 @@ class DefaultAiTaskEngineTest {
                 .context(new HashMap<>())
                 .build();
         when(stateManager.load(TASK_ID, TASK_TYPE, null)).thenReturn(fresh);
-        when(configService.getLatestVersion(TASK_TYPE)).thenReturn(VERSION);
-        when(configService.get(TASK_TYPE, VERSION))
+        when(configService.getLatestVersion(TASK_TYPE, null)).thenReturn(VERSION);
+        when(configService.get(TASK_TYPE, VERSION, null))
                 .thenThrow(new ConfigNotFoundException(TASK_TYPE, VERSION));
 
         AiTaskResponse resp = assertDoesNotThrow(

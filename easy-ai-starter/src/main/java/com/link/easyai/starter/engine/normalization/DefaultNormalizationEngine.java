@@ -65,7 +65,7 @@ public class DefaultNormalizationEngine implements NormalizationEngine {
             return;
         }
 
-        AiTaskConfig config = loadConfig(state);
+        AiTaskConfig config = loadConfig(state, context);
         if (config == null || config.getFields() == null) {
             return;
         }
@@ -153,15 +153,30 @@ public class DefaultNormalizationEngine implements NormalizationEngine {
 
     /**
      * Load the task config for the state's bound version.
+     * 租户隔离：配置合并按 (taskType, tenantId) 解析，tenantId 取自上下文或状态。
      */
-    private AiTaskConfig loadConfig(TaskState state) {
+    private AiTaskConfig loadConfig(TaskState state, TaskContext context) {
+        String tenantId = resolveTenant(state, context);
         try {
-            return configService.get(state.getTaskType(), state.getConfigVersion());
+            return configService.get(state.getTaskType(), state.getConfigVersion(), tenantId);
         } catch (Exception e) {
             log.warn("[NormalizationEngine] cannot load config for taskType={}, version={}: {}",
                     state.getTaskType(), state.getConfigVersion(), e.getMessage());
             return null;
         }
+    }
+
+    private String resolveTenant(TaskState state, TaskContext context) {
+        if (context != null && context.getTenantId() != null && !context.getTenantId().isBlank()) {
+            return context.getTenantId();
+        }
+        if (state != null) {
+            Object tenant = state.getFromContext("tenantId");
+            if (tenant != null) {
+                return String.valueOf(tenant);
+            }
+        }
+        return null;
     }
 
     /**

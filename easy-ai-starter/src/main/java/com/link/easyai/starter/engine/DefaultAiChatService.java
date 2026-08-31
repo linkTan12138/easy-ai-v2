@@ -245,7 +245,7 @@ public class DefaultAiChatService implements AiChatService {
         String currentTaskName = currentTaskType;
         String currentTaskDescription = null;
         try {
-            AiTaskConfig currentConfig = configService.getLatestPublished(currentTaskType);
+            AiTaskConfig currentConfig = configService.getLatestPublished(currentTaskType, tenantId);
             if (currentConfig != null) {
                 currentTaskName = currentConfig.getName() != null ? currentConfig.getName() : currentTaskType;
                 currentTaskDescription = currentConfig.getDescription();

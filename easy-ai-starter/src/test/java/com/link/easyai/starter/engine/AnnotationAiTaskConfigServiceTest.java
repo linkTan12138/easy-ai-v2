@@ -5,6 +5,9 @@ import com.link.easyai.starter.engine.builder.AiTaskConfigBuilder;
 import com.link.easyai.starter.engine.builder.fixtures.FixtureAction;
 import com.link.easyai.starter.engine.builder.fixtures.StaticBeanResolver;
 import com.link.easyai.starter.engine.config.AiTaskConfig;
+import com.link.easyai.starter.engine.config.ExtractionConfig;
+import com.link.easyai.starter.engine.config.FieldDefinition;
+import com.link.easyai.starter.engine.config.FieldExtractionOverrides;
 import com.link.easyai.starter.engine.exception.ConfigNotFoundException;
 import com.link.easyai.starter.engine.exception.ConfigValidationException;
 import com.link.easyai.starter.engine.validation.builtin.EnumValidator;
@@ -20,22 +23,15 @@ import org.springframework.core.env.StandardEnvironment;
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
- * Tests for {@link AnnotationAiTaskConfigService}: annotation-first routing
- * (one config source per task type), database fallback, in-flight version
- * routing, and startup validation (duplicate taskType, broken declarations).
+ * Tests for {@link AnnotationAiTaskConfigService}: annotation-first routing with
+ * DB extraction overrides merged (tenant-first, global fallback, annotation default),
+ * field-code existence validation, in-flight version routing, and startup validation.
  */
 @SuppressWarnings("unchecked")
 class AnnotationAiTaskConfigServiceTest {
@@ -45,8 +41,8 @@ class AnnotationAiTaskConfigServiceTest {
     private static final String BROKEN_PKG = "com.link.easyai.starter.engine.builder.fixtures.broken";
 
     private ApplicationContext applicationContext;
-    private DefaultAiTaskConfigService databaseService;
-    private ObjectProvider<DefaultAiTaskConfigService> databaseProvider;
+    private ExtractionOverrideStore overrideStore;
+    private ObjectProvider<ExtractionOverrideStore> storeProvider;
 
     @BeforeEach
     void setUp() {
@@ -54,9 +50,9 @@ class AnnotationAiTaskConfigServiceTest {
         when(applicationContext.getEnvironment()).thenReturn(new StandardEnvironment());
         when(applicationContext.getClassLoader()).thenReturn(Thread.currentThread().getContextClassLoader());
 
-        databaseService = mock(DefaultAiTaskConfigService.class);
-        databaseProvider = Mockito.mock(ObjectProvider.class);
-        when(databaseProvider.getIfAvailable()).thenReturn(databaseService);
+        overrideStore = mock(ExtractionOverrideStore.class);
+        storeProvider = Mockito.mock(ObjectProvider.class);
+        when(storeProvider.getIfAvailable()).thenReturn(overrideStore);
     }
 
     private AnnotationAiTaskConfigService newService(String... basePackages) {
@@ -71,7 +67,7 @@ class AnnotationAiTaskConfigServiceTest {
                 new AiTaskConfigBuilder(),
                 testResolver(),
                 properties,
-                databaseProvider,
+                storeProvider,
                 applicationContext);
     }
 
@@ -86,91 +82,145 @@ class AnnotationAiTaskConfigServiceTest {
         service.onApplicationEvent(new ContextRefreshedEvent(applicationContext));
     }
 
-    // ---------- routing: annotation first ----------
+    private FieldExtractionOverrides overridesFor(String taskType, String fieldCode, String newRule) {
+        return FieldExtractionOverrides.builder()
+                .taskType(taskType)
+                .fields(Map.of(fieldCode, ExtractionConfig.builder().rules(java.util.List.of(newRule)).build()))
+                .build();
+    }
+
+    // ---------- routing: annotation first, DB overrides merged ----------
 
     @Test
-    @DisplayName("注解任务由代码提供配置（version=1），完全不查数据库")
-    void annotationTaskServedFromCode() {
+    @DisplayName("无数据库覆盖时注解任务返回注解配置（version=1）")
+    void annotationTaskServedFromCodeWhenNoOverrides() {
         AnnotationAiTaskConfigService service = newService(VALID_PKG);
         refresh(service);
 
-        AiTaskConfig config = service.getLatestPublished("FIXTURE_TASK_A");
+        AiTaskConfig config = service.getLatestPublished("FIXTURE_TASK_A", null);
 
         assertNotNull(config);
         assertEquals("FIXTURE_TASK_A", config.getTaskType());
         assertEquals(1, config.getVersion());
         assertEquals("任务甲", config.getName());
-        assertEquals("FIXTURE_ACTION", config.getAction().getType());
         assertEquals(5, config.getFields().size());
-        verify(databaseService, never()).getLatestPublished(anyString());
-
-        assertTrue(service.isAnnotationConfigured("FIXTURE_TASK_A"));
-        assertTrue(service.getAnnotationConfigs().containsKey("FIXTURE_TASK_B"));
+        // 无覆盖：不修改注解原配置
+        verify(overrideStore).getPublishedOverrides("FIXTURE_TASK_A", null);
+        assertEquals("规则一", config.getField("customerName").getExtraction().getRules().get(0));
     }
 
     @Test
-    @DisplayName("未注解声明的任务回落到数据库服务")
-    void databaseTaskFallsBackToDatabase() {
+    @DisplayName("数据库覆盖按字段合并进注解配置，未覆盖字段保持注解默认")
+    void databaseOverrideMergedPerField() {
         AnnotationAiTaskConfigService service = newService(VALID_PKG);
         refresh(service);
 
-        AiTaskConfig dbConfig = AiTaskConfig.builder()
-                .taskType("DB_TASK").version(5).name("数据库任务").build();
-        when(databaseService.getLatestPublished("DB_TASK")).thenReturn(dbConfig);
+        FieldExtractionOverrides overrides = overridesFor("FIXTURE_TASK_A", "customerName", "新规则X");
+        overrides.setVersion(2);
+        when(overrideStore.getPublishedOverrides("FIXTURE_TASK_A", "T1")).thenReturn(overrides);
 
-        AiTaskConfig config = service.getLatestPublished("DB_TASK");
+        AiTaskConfig merged = service.getLatestPublished("FIXTURE_TASK_A", "T1");
 
-        assertEquals("DB_TASK", config.getTaskType());
-        assertEquals(5, config.getVersion());
-        verify(databaseService).getLatestPublished("DB_TASK");
+        assertEquals(2, merged.getVersion()); // 覆盖版本生效
+        ExtractionConfig customerName = merged.getField("customerName").getExtraction();
+        assertEquals("新规则X", customerName.getRules().get(0));
+        // 未覆盖字段保持注解默认
+        ExtractionConfig priority = merged.getField("priority").getExtraction();
+        assertEquals("优先级描述", priority.getDescription());
+        // 注解缓存不被污染：原配置仍是注解默认
+        AiTaskConfig annotation = service.getAnnotationConfigs().get("FIXTURE_TASK_A");
+        assertEquals("规则一", annotation.getField("customerName").getExtraction().getRules().get(0));
     }
 
     @Test
-    @DisplayName("在途任务路由：注解任务请求非 1 版本时回落数据库")
-    void inFlightTaskResumesAgainstDatabaseVersion() {
+    @DisplayName("租户维度透传：getLatestPublished 以 (taskType, tenantId) 解析覆盖")
+    void tenantIdPassedToOverrideStore() {
         AnnotationAiTaskConfigService service = newService(VALID_PKG);
         refresh(service);
 
-        AiTaskConfig legacy = AiTaskConfig.builder()
-                .taskType("FIXTURE_TASK_A").version(3).name("旧版").build();
-        when(databaseService.get("FIXTURE_TASK_A", 3)).thenReturn(legacy);
+        service.getLatestPublished("FIXTURE_TASK_A", "TENANT-X");
 
-        assertEquals(legacy, service.get("FIXTURE_TASK_A", 3));
-        // version 1 always resolves to the annotation config, never the database
-        assertEquals(1, service.get("FIXTURE_TASK_A", 1).getVersion());
-        verify(databaseService).get("FIXTURE_TASK_A", 3);
-        verify(databaseService, never()).get("FIXTURE_TASK_A", 1);
+        verify(overrideStore).getPublishedOverrides("FIXTURE_TASK_A", "TENANT-X");
     }
 
     @Test
-    @DisplayName("getLatestVersion：注解任务恒为 1；DB 任务走数据库；无 DB 返回 null")
+    @DisplayName("未注解声明的任务抛 ConfigNotFoundException（任务只来自注解）")
+    void unregisteredTaskThrows() {
+        AnnotationAiTaskConfigService service = newService(VALID_PKG);
+        refresh(service);
+
+        assertThrows(ConfigNotFoundException.class, () -> service.getLatestPublished("DB_TASK", null));
+        assertThrows(ConfigNotFoundException.class, () -> service.get("DB_TASK", 5, null));
+    }
+
+    @Test
+    @DisplayName("getLatestVersion：无覆盖返回 1；有覆盖返回覆盖版本；未注解任务返回 null")
     void latestVersionRouting() {
         AnnotationAiTaskConfigService service = newService(VALID_PKG);
         refresh(service);
 
-        assertEquals(1, service.getLatestVersion("FIXTURE_TASK_A"));
+        assertEquals(1, service.getLatestVersion("FIXTURE_TASK_A", null));
 
-        when(databaseService.getLatestVersion("DB_TASK")).thenReturn(7);
-        assertEquals(7, service.getLatestVersion("DB_TASK"));
+        when(overrideStore.getLatestVersion("FIXTURE_TASK_A", "T1")).thenReturn(7);
+        assertEquals(7, service.getLatestVersion("FIXTURE_TASK_A", "T1"));
+
+        assertNull(service.getLatestVersion("DB_TASK", null));
     }
 
     @Test
-    @DisplayName("无数据库服务时 getLatestVersion 返回 null（契约），读取抛 CONFIG_NOT_FOUND")
-    void behavesWithoutDatabaseService() {
-        ObjectProvider<DefaultAiTaskConfigService> empty = Mockito.mock(ObjectProvider.class);
-        when(empty.getIfAvailable()).thenReturn(null);
-
-        AiTaskProperties properties = new AiTaskProperties();
-        properties.getAnnotation().setBasePackages(new String[]{VALID_PKG});
-        AnnotationAiTaskConfigService service = new AnnotationAiTaskConfigService(
-                new AiAnnotationScanner(), new AiTaskConfigBuilder(), testResolver(),
-                properties, empty, applicationContext);
+    @DisplayName("在途任务恢复：按绑定版本 + 租户解析覆盖并合并")
+    void inFlightTaskMergesBoundVersion() {
+        AnnotationAiTaskConfigService service = newService(VALID_PKG);
         refresh(service);
 
-        assertNull(service.getLatestVersion("UNKNOWN_TASK"));
-        assertThrows(ConfigNotFoundException.class, () -> service.getLatestPublished("UNKNOWN_TASK"));
-        // annotation tasks still work without any database
-        assertEquals(1, service.getLatestVersion("FIXTURE_TASK_A"));
+        FieldExtractionOverrides overrides = overridesFor("FIXTURE_TASK_A", "customerName", "v3规则");
+        when(overrideStore.getOverrides("FIXTURE_TASK_A", 3, null)).thenReturn(overrides);
+
+        AiTaskConfig config = service.get("FIXTURE_TASK_A", 3, null);
+
+        assertEquals(3, config.getVersion());
+        assertEquals("v3规则", config.getField("customerName").getExtraction().getRules().get(0));
+    }
+
+    // ---------- saveDraft: now allowed for annotation tasks, with validation ----------
+
+    @Test
+    @DisplayName("saveDraft 允许注解任务（存字段覆盖），并委托 override store")
+    void saveDraftAllowedForAnnotationTask() {
+        AnnotationAiTaskConfigService service = newService(VALID_PKG);
+        refresh(service);
+
+        FieldExtractionOverrides overrides = overridesFor("FIXTURE_TASK_A", "customerName", "规则");
+        service.saveDraft("FIXTURE_TASK_A", null, overrides);
+
+        verify(overrideStore).saveDraft("FIXTURE_TASK_A", null, overrides);
+    }
+
+    @Test
+    @DisplayName("saveDraft 覆盖引用了不存在的字段时抛出 ConfigValidationException")
+    void saveDraftRejectsUnknownField() {
+        AnnotationAiTaskConfigService service = newService(VALID_PKG);
+        refresh(service);
+
+        FieldExtractionOverrides overrides = FieldExtractionOverrides.builder()
+                .taskType("FIXTURE_TASK_A")
+                .fields(Map.of("noSuchField", ExtractionConfig.builder().rules(java.util.List.of("x")).build()))
+                .build();
+
+        ConfigValidationException e = assertThrows(ConfigValidationException.class,
+                () -> service.saveDraft("FIXTURE_TASK_A", null, overrides));
+        assertTrue(e.getMessage().contains("noSuchField"), e.getMessage());
+        verify(overrideStore, never()).saveDraft(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("saveDraft 对未注解任务抛 ConfigValidationException")
+    void saveDraftRejectsUnregisteredTask() {
+        AnnotationAiTaskConfigService service = newService(VALID_PKG);
+        refresh(service);
+
+        assertThrows(ConfigValidationException.class,
+                () -> service.saveDraft("DB_TASK", null, overridesFor("DB_TASK", "x", "r")));
     }
 
     // ---------- startup validation ----------
@@ -205,16 +255,6 @@ class AnnotationAiTaskConfigServiceTest {
         assertTrue(message.contains("type 不能为空"), message);
     }
 
-    @Test
-    @DisplayName("saveDraft 拒绝注解声明的 taskType（代码即配置）")
-    void saveDraftRejectedForAnnotationTask() {
-        AnnotationAiTaskConfigService service = newService(VALID_PKG);
-        refresh(service);
-
-        AiTaskConfig draft = AiTaskConfig.builder().taskType("FIXTURE_TASK_A").version(2).build();
-        assertThrows(ConfigValidationException.class, () -> service.saveDraft(draft));
-    }
-
     // ---------- lifecycle of the build itself ----------
 
     @Test
@@ -229,7 +269,7 @@ class AnnotationAiTaskConfigServiceTest {
         verify(scanner, never()).scan(any(), any(), any());
 
         refresh(service);
-        refresh(service); // second refresh of the same context must not rebuild
+        refresh(service);
         verify(scanner).scan(any(), any(), any());
     }
 
@@ -238,11 +278,29 @@ class AnnotationAiTaskConfigServiceTest {
     void lazyBuildWithoutRefreshEvent() {
         AnnotationAiTaskConfigService service = newService(VALID_PKG);
 
-        // no refresh event fired — direct read triggers the lazy build
-        AiTaskConfig config = service.getLatestPublished("FIXTURE_TASK_A");
+        AiTaskConfig config = service.getLatestPublished("FIXTURE_TASK_A", null);
 
         assertEquals("FIXTURE_TASK_A", config.getTaskType());
         Map<String, AiTaskConfig> all = service.getAnnotationConfigs();
         assertEquals(2, all.size());
+    }
+
+    @Test
+    @DisplayName("无覆盖存储服务时注解配置原样可用（纯注解模式）")
+    void behavesWithoutOverrideStore() {
+        ObjectProvider<ExtractionOverrideStore> empty = Mockito.mock(ObjectProvider.class);
+        when(empty.getIfAvailable()).thenReturn(null);
+
+        AiTaskProperties properties = new AiTaskProperties();
+        properties.getAnnotation().setBasePackages(new String[]{VALID_PKG});
+        AnnotationAiTaskConfigService service = new AnnotationAiTaskConfigService(
+                new AiAnnotationScanner(), new AiTaskConfigBuilder(), testResolver(),
+                properties, empty, applicationContext);
+        refresh(service);
+
+        assertEquals(1, service.getLatestVersion("FIXTURE_TASK_A", null));
+        AiTaskConfig config = service.getLatestPublished("FIXTURE_TASK_A", null);
+        assertEquals("FIXTURE_TASK_A", config.getTaskType());
+        assertThrows(ConfigNotFoundException.class, () -> service.getLatestPublished("UNKNOWN_TASK", null));
     }
 }

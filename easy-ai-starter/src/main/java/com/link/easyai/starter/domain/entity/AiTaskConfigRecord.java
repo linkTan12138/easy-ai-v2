@@ -23,6 +23,12 @@ public class AiTaskConfigRecord extends BaseEntity {
     /** Task type identifier, e.g. "ORDER_UPDATE" */
     private String taskType;
 
+    /**
+     * 租户作用范围：NULL 表示全局默认模板；非空表示租户私有覆盖（优先级高于全局）。
+     * 与 task_type、version 共同构成唯一键。
+     */
+    private String tenantId;
+
     /** Config version number */
     private Integer version;
 

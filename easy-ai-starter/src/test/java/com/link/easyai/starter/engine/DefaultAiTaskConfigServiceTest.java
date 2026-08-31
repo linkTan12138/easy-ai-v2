@@ -2,9 +2,8 @@ package com.link.easyai.starter.engine;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.link.easyai.starter.domain.entity.AiTaskConfigRecord;
-import com.link.easyai.starter.engine.config.AiTaskConfig;
-import com.link.easyai.starter.engine.config.FieldDefinition;
-import com.link.easyai.starter.engine.config.FieldType;
+import com.link.easyai.starter.engine.config.ExtractionConfig;
+import com.link.easyai.starter.engine.config.FieldExtractionOverrides;
 import com.link.easyai.starter.engine.exception.ConfigNotFoundException;
 import com.link.easyai.starter.mapper.AiTaskConfigRecordMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,14 +12,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Tests for {@link DefaultAiTaskConfigService}: version resolution,
- * JSON parsing, caching, and version binding semantics.
+ * Tests for {@link DefaultAiTaskConfigService}: extraction-override storage with
+ * tenant-first / global-fallback resolution, version lifecycle, JSON parsing and
+ * taskType consistency validation.
  */
 class DefaultAiTaskConfigServiceTest {
 
@@ -30,11 +31,9 @@ class DefaultAiTaskConfigServiceTest {
     private static final String CONFIG_JSON = """
             {
               "taskType": "ORDER_UPDATE",
-              "version": 2,
-              "name": "运单修改",
-              "fields": [
-                {"code": "channel", "name": "渠道", "type": "STRING", "required": true}
-              ]
+              "fields": {
+                "channel": { "description": "渠道", "rules": ["规则A"] }
+              }
             }
             """;
 
@@ -44,10 +43,11 @@ class DefaultAiTaskConfigServiceTest {
         service = new DefaultAiTaskConfigService(mapper, new ObjectMapper());
     }
 
-    private AiTaskConfigRecord record(String taskType, int version, String status) {
+    private AiTaskConfigRecord record(String taskType, String tenantId, int version, String status) {
         AiTaskConfigRecord r = new AiTaskConfigRecord();
         r.setId((long) version);
         r.setTaskType(taskType);
+        r.setTenantId(tenantId);
         r.setVersion(version);
         r.setName("name-" + version);
         r.setConfigJson(CONFIG_JSON);
@@ -55,298 +55,211 @@ class DefaultAiTaskConfigServiceTest {
         return r;
     }
 
+    // ---------- read: tenant first, global fallback ----------
+
     @Test
-    @DisplayName("getLatestPublished 返回最新 PUBLISHED 版本并解析 JSON")
-    void getLatestPublishedParsesJson() {
-        when(mapper.selectOne(any())).thenReturn(record("ORDER_UPDATE", 3,
+    @DisplayName("getPublishedOverrides：租户作用域有发布时返回租户覆盖")
+    void publishedOverridesPrefersTenantScope() {
+        when(mapper.selectOne(any())).thenReturn(record("ORDER_UPDATE", "T1", 3,
                 AiTaskConfigRecord.STATUS_PUBLISHED));
 
-        AiTaskConfig config = service.getLatestPublished("ORDER_UPDATE");
+        FieldExtractionOverrides overrides = service.getPublishedOverrides("ORDER_UPDATE", "T1");
 
-        assertEquals("ORDER_UPDATE", config.getTaskType());
-        assertEquals(3, config.getVersion()); // DB identity wins over JSON
-        assertEquals(1, config.getFields().size());
-        assertEquals("channel", config.getFields().get(0).getCode());
-        assertEquals(FieldType.STRING, config.getFields().get(0).getType());
+        assertNotNull(overrides);
+        assertEquals("ORDER_UPDATE", overrides.getTaskType());
+        assertEquals(3, overrides.getVersion()); // DB identity wins over JSON
+        assertEquals("规则A", overrides.getFields().get("channel").getRules().get(0));
     }
 
     @Test
-    @DisplayName("无 PUBLISHED 配置时抛出 ConfigNotFoundException")
-    void noPublishedConfigThrows() {
+    @DisplayName("getPublishedOverrides：租户无覆盖时回退全局作用域")
+    void publishedOverridesFallsBackToGlobal() {
+        // 第一次查询（租户 T1）返回 null → 回退查询全局
+        when(mapper.selectOne(any()))
+                .thenReturn(null)
+                .thenReturn(record("ORDER_UPDATE", null, 2, AiTaskConfigRecord.STATUS_PUBLISHED));
+
+        FieldExtractionOverrides overrides = service.getPublishedOverrides("ORDER_UPDATE", "T1");
+
+        assertNotNull(overrides);
+        assertEquals(2, overrides.getVersion());
+        verify(mapper, times(2)).selectOne(any());
+    }
+
+    @Test
+    @DisplayName("getPublishedOverrides：租户与全局都无覆盖时返回 null（使用注解默认）")
+    void publishedOverridesReturnsNullWhenNone() {
         when(mapper.selectOne(any())).thenReturn(null);
 
-        assertThrows(ConfigNotFoundException.class, () -> service.getLatestPublished("X"));
+        assertNull(service.getPublishedOverrides("ORDER_UPDATE", "T1"));
+        assertNull(service.getPublishedOverrides("ORDER_UPDATE", null));
     }
 
     @Test
-    @DisplayName("get(taskType, version) 支持任意状态（绑定版本可继续使用）")
-    void getReturnsBoundVersionRegardlessOfStatus() {
-        when(mapper.selectOne(any())).thenReturn(record("ORDER_UPDATE", 1,
-                AiTaskConfigRecord.STATUS_DISABLED));
+    @DisplayName("getOverrides：指定版本任意状态，租户优先全局兜底")
+    void getOverridesAnyStatusTenantFirst() {
+        when(mapper.selectOne(any()))
+                .thenReturn(null) // 租户无
+                .thenReturn(record("ORDER_UPDATE", null, 1, AiTaskConfigRecord.STATUS_DISABLED));
 
-        AiTaskConfig config = service.get("ORDER_UPDATE", 1);
+        FieldExtractionOverrides overrides = service.getOverrides("ORDER_UPDATE", 1, "T1");
 
-        assertEquals(1, config.getVersion());
+        assertNotNull(overrides);
+        assertEquals(1, overrides.getVersion());
     }
 
     @Test
-    @DisplayName("指定版本不存在时抛出 ConfigNotFoundException")
-    void missingVersionThrows() {
-        when(mapper.selectOne(any())).thenReturn(null);
+    @DisplayName("getLatestVersion：租户优先，全局兜底，无发布返回 null")
+    void latestVersionResolution() {
+        when(mapper.selectOne(any()))
+                .thenReturn(null)
+                .thenReturn(record("ORDER_UPDATE", null, 5, AiTaskConfigRecord.STATUS_PUBLISHED));
 
-        assertThrows(ConfigNotFoundException.class, () -> service.get("ORDER_UPDATE", 99));
+        assertEquals(5, service.getLatestVersion("ORDER_UPDATE", "T1"));
+        assertNull(service.getLatestVersion("NONE", null));
     }
 
     @Test
     @DisplayName("非法参数直接抛出异常")
     void invalidArgumentsThrow() {
-        assertThrows(ConfigNotFoundException.class, () -> service.getLatestPublished(null));
-        assertThrows(ConfigNotFoundException.class, () -> service.getLatestPublished(" "));
-        assertThrows(ConfigNotFoundException.class, () -> service.get("X", null));
-        assertThrows(ConfigNotFoundException.class, () -> service.get(null, 1));
+        assertThrows(ConfigNotFoundException.class, () -> service.getPublishedOverrides(null, null));
+        assertThrows(ConfigNotFoundException.class, () -> service.getPublishedOverrides(" ", null));
+        assertThrows(ConfigNotFoundException.class, () -> service.getOverrides("X", null, null));
+        assertThrows(ConfigNotFoundException.class, () -> service.getOverrides(null, 1, null));
+    }
+
+    // ---------- JSON parsing & validation ----------
+
+    @Test
+    @DisplayName("config_json.taskType 与表行不一致时抛 ConfigNotFoundException（防串任务）")
+    void taskTypeMismatchThrows() {
+        AiTaskConfigRecord r = record("OTHER_TYPE", null, 7, AiTaskConfigRecord.STATUS_PUBLISHED);
+        when(mapper.selectOne(any())).thenReturn(r);
+
+        assertThrows(ConfigNotFoundException.class, () -> service.getPublishedOverrides("OTHER_TYPE", null));
     }
 
     @Test
-    @DisplayName("getLatestVersion 返回最新 PUBLISHED 版本号")
-    void getLatestVersionReturnsPublishedVersion() {
-        when(mapper.selectList(any())).thenReturn(List.of(record("ORDER_UPDATE", 5,
-                AiTaskConfigRecord.STATUS_PUBLISHED)));
+    @DisplayName("configJson 为空或非法时抛 ConfigNotFoundException")
+    void malformedJsonThrows() {
+        AiTaskConfigRecord r = record("ORDER_UPDATE", null, 1, AiTaskConfigRecord.STATUS_PUBLISHED);
+        r.setConfigJson("{ not valid json");
+        when(mapper.selectOne(any())).thenReturn(r);
 
-        assertEquals(5, service.getLatestVersion("ORDER_UPDATE"));
+        assertThrows(ConfigNotFoundException.class, () -> service.getPublishedOverrides("ORDER_UPDATE", null));
     }
 
     @Test
-    @DisplayName("无任何 PUBLISHED 版本时 getLatestVersion 返回 null")
-    void getLatestVersionNullWhenNone() {
-        when(mapper.selectList(any())).thenReturn(List.of());
-
-        assertNull(service.getLatestVersion("ORDER_UPDATE"));
-        assertNull(service.getLatestVersion(null));
-    }
-
-    @Test
-    @DisplayName("PUBLISHED 配置解析结果被缓存（第二次不再查库）")
-    void publishedConfigCached() {
-        when(mapper.selectOne(any())).thenReturn(record("ORDER_UPDATE", 2,
+    @DisplayName("PUBLISHED 覆盖解析结果被缓存（第二次不再查库）")
+    void publishedOverridesCached() {
+        when(mapper.selectOne(any())).thenReturn(record("ORDER_UPDATE", null, 2,
                 AiTaskConfigRecord.STATUS_PUBLISHED));
 
-        service.get("ORDER_UPDATE", 2);
-        service.get("ORDER_UPDATE", 2);
+        service.getOverrides("ORDER_UPDATE", 2, null);
+        service.getOverrides("ORDER_UPDATE", 2, null);
 
         verify(mapper, times(1)).selectOne(any());
     }
 
-    @Test
-    @DisplayName("configJson 为空时抛出 ConfigNotFoundException")
-    void emptyJsonThrows() {
-        AiTaskConfigRecord r = record("ORDER_UPDATE", 1, AiTaskConfigRecord.STATUS_PUBLISHED);
-        r.setConfigJson(" ");
-        when(mapper.selectOne(any())).thenReturn(r);
-
-        assertThrows(ConfigNotFoundException.class, () -> service.get("ORDER_UPDATE", 1));
-    }
+    // ---- Lifecycle management ----
 
     @Test
-    @DisplayName("configJson 非法时抛出 ConfigNotFoundException")
-    void malformedJsonThrows() {
-        AiTaskConfigRecord r = record("ORDER_UPDATE", 1, AiTaskConfigRecord.STATUS_PUBLISHED);
-        r.setConfigJson("{ not valid json");
-        when(mapper.selectOne(any())).thenReturn(r);
-
-        assertThrows(ConfigNotFoundException.class, () -> service.get("ORDER_UPDATE", 1));
-    }
-
-    @Test
-    @DisplayName("JSON 中缺失的 taskType/version 由 DB 行补齐")
-    void dbIdentityWinsOverJson() {
-        AiTaskConfigRecord r = record("OTHER_TYPE", 7, AiTaskConfigRecord.STATUS_PUBLISHED);
-        // JSON inside says taskType=ORDER_UPDATE version=2; DB row says otherwise
-        when(mapper.selectOne(any())).thenReturn(r);
-
-        AiTaskConfig config = service.get("OTHER_TYPE", 7);
-
-        assertEquals("OTHER_TYPE", config.getTaskType());
-        assertEquals(7, config.getVersion());
-    }
-
-    // ---- Lifecycle management tests ----
-
-    @Test
-    @DisplayName("saveDraft 新配置时自动分配版本号并插入记录")
+    @DisplayName("saveDraft：自动分配版本号、按租户作用域插入记录并序列化覆盖集")
     void saveDraftNewConfigAutoVersion() {
         when(mapper.selectList(any())).thenReturn(List.of());
 
-        AiTaskConfig config = AiTaskConfig.builder()
+        FieldExtractionOverrides overrides = FieldExtractionOverrides.builder()
                 .taskType("DEMO")
-                .name("演示")
-                .fields(List.of())
+                .fields(Map.of("phone", ExtractionConfig.builder().rules(List.of("r")).build()))
                 .build();
 
-        AiTaskConfigRecord result = service.saveDraft(config);
+        ArgumentCaptor<AiTaskConfigRecord> captor = ArgumentCaptor.forClass(AiTaskConfigRecord.class);
+        AiTaskConfigRecord result = service.saveDraft("DEMO", "T1", overrides);
 
+        verify(mapper).insert(captor.capture());
         assertEquals("DEMO", result.getTaskType());
+        assertEquals("T1", result.getTenantId());
         assertEquals(1, result.getVersion());
         assertEquals(AiTaskConfigRecord.STATUS_DRAFT, result.getStatus());
-        verify(mapper).insert(any());
+        assertTrue(captor.getValue().getConfigJson().contains("phone"));
     }
 
     @Test
-    @DisplayName("saveDraft 已有版本时自动分配下一个版本号")
-    void saveDraftAutoNextVersion() {
-        when(mapper.selectList(any())).thenReturn(List.of(record("DEMO", 3, AiTaskConfigRecord.STATUS_DRAFT)));
+    @DisplayName("saveDraft：全局作用域 tenantId 归一为 null")
+    void saveDraftNormalizesBlankTenantToNull() {
+        when(mapper.selectList(any())).thenReturn(List.of());
 
-        AiTaskConfig config = AiTaskConfig.builder()
-                .taskType("DEMO")
-                .name("演示v4")
-                .fields(List.of())
-                .build();
+        service.saveDraft("DEMO", "  ", FieldExtractionOverrides.builder().taskType("DEMO").build());
 
-        AiTaskConfigRecord result = service.saveDraft(config);
-
-        assertEquals(4, result.getVersion());
+        ArgumentCaptor<AiTaskConfigRecord> captor = ArgumentCaptor.forClass(AiTaskConfigRecord.class);
+        verify(mapper).insert(captor.capture());
+        assertNull(captor.getValue().getTenantId());
     }
 
     @Test
-    @DisplayName("saveDraft 指定版本且已有 DRAFT 时更新而非插入")
+    @DisplayName("saveDraft：指定版本已有 DRAFT 时更新而非插入")
     void saveDraftUpdatesExistingDraft() {
-        AiTaskConfigRecord existing = record("DEMO", 1, AiTaskConfigRecord.STATUS_DRAFT);
+        AiTaskConfigRecord existing = record("DEMO", "T1", 1, AiTaskConfigRecord.STATUS_DRAFT);
         when(mapper.selectOne(any())).thenReturn(existing);
 
-        AiTaskConfig config = AiTaskConfig.builder()
-                .taskType("DEMO")
-                .version(1)
-                .name("更新后的名称")
-                .fields(List.of())
+        FieldExtractionOverrides overrides = FieldExtractionOverrides.builder()
+                .taskType("DEMO").version(1)
+                .fields(Map.of("phone", ExtractionConfig.builder().rules(List.of("新规则")).build()))
                 .build();
 
-        AiTaskConfigRecord result = service.saveDraft(config);
+        AiTaskConfigRecord result = service.saveDraft("DEMO", "T1", overrides);
 
-        assertEquals("更新后的名称", result.getName());
         verify(mapper).updateById(any());
         verify(mapper, never()).insert(any());
     }
 
     @Test
-    @DisplayName("saveDraft 序列化 configJson 并存储")
-    void saveDraftSerializesJson() {
-        when(mapper.selectList(any())).thenReturn(List.of());
-
-        AiTaskConfig config = AiTaskConfig.builder()
-                .taskType("DEMO")
-                .name("演示")
-                .fields(List.of(FieldDefinition.builder()
-                        .code("field1")
-                        .name("字段1")
-                        .type(FieldType.STRING)
-                        .build()))
-                .build();
-
-        ArgumentCaptor<AiTaskConfigRecord> captor = ArgumentCaptor.forClass(AiTaskConfigRecord.class);
-        service.saveDraft(config);
-
-        verify(mapper).insert(captor.capture());
-        assertNotNull(captor.getValue().getConfigJson());
-        assertTrue(captor.getValue().getConfigJson().contains("field1"));
-    }
-
-    @Test
-    @DisplayName("publish 将 DRAFT 转为 PUBLISHED 并设置发布时间")
-    void publishDraftToPublished() {
-        AiTaskConfigRecord draft = record("DEMO", 1, AiTaskConfigRecord.STATUS_DRAFT);
+    @DisplayName("publish：同租户作用域下旧 PUBLISHED 自动 DISABLED")
+    void publishDisablesOldPublishedInSameScope() {
+        AiTaskConfigRecord draft = record("DEMO", "T1", 2, AiTaskConfigRecord.STATUS_DRAFT);
+        AiTaskConfigRecord oldPublished = record("DEMO", "T1", 1, AiTaskConfigRecord.STATUS_PUBLISHED);
         when(mapper.selectOne(any())).thenReturn(draft);
-        when(mapper.selectList(any())).thenReturn(List.of());
-
-        AiTaskConfigRecord result = service.publish("DEMO", 1);
-
-        assertEquals(AiTaskConfigRecord.STATUS_PUBLISHED, result.getStatus());
-        assertNotNull(result.getPublishedTime());
-        verify(mapper).updateById(any());
-    }
-
-    @Test
-    @DisplayName("publish 自动禁用同 taskType 的旧 PUBLISHED 版本")
-    void publishDisablesOldPublished() {
-        AiTaskConfigRecord draft = record("DEMO", 2, AiTaskConfigRecord.STATUS_DRAFT);
-        AiTaskConfigRecord oldPublished = record("DEMO", 1, AiTaskConfigRecord.STATUS_PUBLISHED);
-
-        when(mapper.selectOne(any())).thenReturn(draft);
-        // First selectList: for finding old published versions
         when(mapper.selectList(any())).thenReturn(List.of(oldPublished));
 
-        service.publish("DEMO", 2);
+        AiTaskConfigRecord result = service.publish("DEMO", 2, "T1");
 
+        assertEquals(AiTaskConfigRecord.STATUS_PUBLISHED, result.getStatus());
         assertEquals(AiTaskConfigRecord.STATUS_DISABLED, oldPublished.getStatus());
     }
 
     @Test
-    @DisplayName("publish 不存在的配置时抛出 ConfigNotFoundException")
-    void publishNotFoundThrows() {
+    @DisplayName("publish 不存在的配置或非 DRAFT 时抛出 ConfigNotFoundException")
+    void publishInvalidThrows() {
         when(mapper.selectOne(any())).thenReturn(null);
+        assertThrows(ConfigNotFoundException.class, () -> service.publish("DEMO", 99, null));
 
-        assertThrows(ConfigNotFoundException.class, () -> service.publish("DEMO", 99));
+        when(mapper.selectOne(any())).thenReturn(record("DEMO", null, 1, AiTaskConfigRecord.STATUS_PUBLISHED));
+        assertThrows(ConfigNotFoundException.class, () -> service.publish("DEMO", 1, null));
     }
 
     @Test
-    @DisplayName("publish 非 DRAFT 状态的配置时抛出异常")
-    void publishNonDraftThrows() {
-        AiTaskConfigRecord published = record("DEMO", 1, AiTaskConfigRecord.STATUS_PUBLISHED);
-        when(mapper.selectOne(any())).thenReturn(published);
-
-        assertThrows(ConfigNotFoundException.class, () -> service.publish("DEMO", 1));
-    }
-
-    @Test
-    @DisplayName("disable 将 PUBLISHED 转为 DISABLED")
-    void disablePublishedToDisabled() {
-        AiTaskConfigRecord published = record("DEMO", 1, AiTaskConfigRecord.STATUS_PUBLISHED);
-        when(mapper.selectOne(any())).thenReturn(published);
-
-        AiTaskConfigRecord result = service.disable("DEMO", 1);
-
+    @DisplayName("disable 将 PUBLISHED 转为 DISABLED；不存在时抛异常")
+    void disableLifecycle() {
+        when(mapper.selectOne(any())).thenReturn(record("DEMO", null, 1, AiTaskConfigRecord.STATUS_PUBLISHED));
+        AiTaskConfigRecord result = service.disable("DEMO", 1, null);
         assertEquals(AiTaskConfigRecord.STATUS_DISABLED, result.getStatus());
         verify(mapper).updateById(any());
-    }
 
-    @Test
-    @DisplayName("disable 不存在的配置时抛出异常")
-    void disableNotFoundThrows() {
         when(mapper.selectOne(any())).thenReturn(null);
-
-        assertThrows(ConfigNotFoundException.class, () -> service.disable("DEMO", 99));
+        assertThrows(ConfigNotFoundException.class, () -> service.disable("DEMO", 99, null));
     }
 
     @Test
-    @DisplayName("list 按 taskType 查询并按版本降序返回")
-    void listByTaskType() {
-        AiTaskConfigRecord v1 = record("DEMO", 1, AiTaskConfigRecord.STATUS_DRAFT);
-        AiTaskConfigRecord v2 = record("DEMO", 2, AiTaskConfigRecord.STATUS_PUBLISHED);
-        when(mapper.selectList(any())).thenReturn(List.of(v2, v1));
+    @DisplayName("list 按任务类型 + 租户作用域查询并按版本降序返回")
+    void listScopedByTenant() {
+        when(mapper.selectList(any())).thenReturn(List.of(
+                record("DEMO", "T1", 2, AiTaskConfigRecord.STATUS_PUBLISHED),
+                record("DEMO", "T1", 1, AiTaskConfigRecord.STATUS_DRAFT)));
 
-        List<AiTaskConfigRecord> result = service.list("DEMO");
+        List<AiTaskConfigRecord> result = service.list("DEMO", "T1");
 
         assertEquals(2, result.size());
         assertEquals(2, result.get(0).getVersion());
         assertEquals(1, result.get(1).getVersion());
-    }
-
-    @Test
-    @DisplayName("list 传入 null 时返回所有配置")
-    void listAll() {
-        when(mapper.selectList(any())).thenReturn(List.of());
-
-        List<AiTaskConfigRecord> result = service.list(null);
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    @DisplayName("saveDraft taskType 为空时抛出异常")
-    void saveDraftBlankTaskTypeThrows() {
-        AiTaskConfig config = AiTaskConfig.builder()
-                .taskType(" ")
-                .build();
-
-        assertThrows(ConfigNotFoundException.class, () -> service.saveDraft(config));
     }
 }

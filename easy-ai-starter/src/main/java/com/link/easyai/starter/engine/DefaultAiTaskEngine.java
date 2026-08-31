@@ -136,13 +136,18 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
 
     private AiTaskResponse doExecute(String taskType, String taskId, String userMessage,
                                      TaskContext taskContext, TaskState[] stateHolder) {
+        // 租户隔离：配置合并以 (taskType, tenantId) 解析（租户覆盖 > 全局覆盖 > 注解默认）
+        String tenantId = taskContext != null && taskContext.getTenantId() != null
+                && !taskContext.getTenantId().isBlank()
+                ? taskContext.getTenantId()
+                : null;
         // 1. Load config (resolve version from existing state or latest published)
         TaskState existingState = stateManager.load(taskId, taskType, null);
         Integer configVersion = (existingState != null && existingState.getConfigVersion() != null)
                 ? existingState.getConfigVersion()
-                : configService.getLatestVersion(taskType);
+                : configService.getLatestVersion(taskType, tenantId);
 
-        AiTaskConfig config = configService.get(taskType, configVersion);
+        AiTaskConfig config = configService.get(taskType, configVersion, tenantId);
         log.debug("[AiTaskEngine] config loaded: taskType={}, version={}", taskType, configVersion);
 
         // 2. Load or create task state
