@@ -9,6 +9,7 @@ import com.link.easyai.starter.engine.context.ExecuteContext;
  * 采用 best-effort 模式，后置任务失败不影响主任务结果。
  * <p>
  * 实现类需标注 {@link AiPostTask} 注解并注册为 Spring Bean。
+ * 后置任务类型标识由 {@link AiPostTask#value()} 提供（唯一权威来源）。
  * <p>
  * 示例：
  * <pre>
@@ -17,11 +18,6 @@ import com.link.easyai.starter.engine.context.ExecuteContext;
  * </pre>
  */
 public interface PostTaskExecutor {
-
-    /**
-     * 获取后置任务类型标识，如 "LOG"、"NOTIFY"。
-     */
-    String type();
 
     /**
      * 执行后置任务。

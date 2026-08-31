@@ -11,6 +11,9 @@ import java.lang.annotation.*;
  * 后置任务在主任务执行成功后依次执行，用于日志、通知、审计等。
  * 采用 best-effort 模式，后置任务失败不影响主任务结果。
  * <p>
+ * 后置任务类型标识由 {@link #value()} 提供（唯一权威来源），
+ * 主任务通过 {@code @AiTask(postActions = {"LOG"})} 按名称启用。
+ * <p>
  * 示例：
  * <pre>
  * &#64;AiPostTask("LOG")

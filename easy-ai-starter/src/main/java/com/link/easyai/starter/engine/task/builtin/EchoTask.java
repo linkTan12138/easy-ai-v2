@@ -22,10 +22,6 @@ public class EchoTask implements TaskExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(EchoTask.class);
 
-    @Override
-    public String type() {
-        return "ECHO";
-    }
 
     @Override
     public TaskResult execute(ExecuteContext context) {

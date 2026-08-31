@@ -38,10 +38,6 @@ public class FeatureIntroTask implements TaskExecutor {
         this.taskRegistry = taskRegistry;
     }
 
-    @Override
-    public String type() {
-        return "FEATURE_INTRO";
-    }
 
     @Override
     public TaskResult execute(ExecuteContext context) {

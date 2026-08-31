@@ -17,10 +17,6 @@ public class LoggingPostTask implements PostTaskExecutor {
 
     private static final Logger auditLog = LoggerFactory.getLogger("AI_TASK_AUDIT");
 
-    @Override
-    public String type() {
-        return "LOG";
-    }
 
     @Override
     public void execute(ExecuteContext context) {

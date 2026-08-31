@@ -2,6 +2,7 @@ package com.link.easyai.starter.engine.task;
 
 import org.springframework.stereotype.Component;
 
+import java.lang.annotation.Annotation;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -11,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 任务执行器注册表。
  * <p>
  * 启动时收集所有实现 {@link TaskExecutor} 和 {@link PostTaskExecutor} 的 Bean，
- * 按 type() 标识注册。
+ * 以 {@link AiTask#value()} / {@link AiPostTask#value()} 为唯一标识注册。
  */
 @Component
 public class TaskRegistry {
@@ -21,16 +22,39 @@ public class TaskRegistry {
 
     /**
      * 注册一个任务执行器。
+     * 标识取自 {@link AiTask#value()}；注解缺失或 value 为空时快速失败。
      */
     public void register(TaskExecutor executor) {
-        tasks.put(executor.type(), executor);
+        AiTask annotation = resolveAnnotation(executor.getClass(), AiTask.class);
+        if (annotation == null || annotation.value() == null || annotation.value().isBlank()) {
+            throw new IllegalStateException(
+                    "TaskExecutor 实现类缺少 @AiTask 注解或 value 为空: " + executor.getClass().getName());
+        }
+        tasks.put(annotation.value(), executor);
     }
 
     /**
      * 注册一个后置任务执行器。
+     * 标识取自 {@link AiPostTask#value()}；注解缺失或 value 为空时快速失败。
      */
     public void register(PostTaskExecutor executor) {
-        postTasks.put(executor.type(), executor);
+        AiPostTask annotation = resolveAnnotation(executor.getClass(), AiPostTask.class);
+        if (annotation == null || annotation.value() == null || annotation.value().isBlank()) {
+            throw new IllegalStateException(
+                    "PostTaskExecutor 实现类缺少 @AiPostTask 注解或 value 为空: " + executor.getClass().getName());
+        }
+        postTasks.put(annotation.value(), executor);
+    }
+
+    /**
+     * 解析实例上的类型注解，兼容 CGLIB 代理子类（注解不继承，需回退查父类）。
+     */
+    private <A extends Annotation> A resolveAnnotation(Class<?> clazz, Class<A> annotationType) {
+        A annotation = clazz.getAnnotation(annotationType);
+        if (annotation == null && clazz.getSuperclass() != null) {
+            annotation = clazz.getSuperclass().getAnnotation(annotationType);
+        }
+        return annotation;
     }
 
     /**
