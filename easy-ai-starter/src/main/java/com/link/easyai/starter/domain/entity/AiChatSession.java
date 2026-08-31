@@ -19,8 +19,11 @@ import java.time.LocalDateTime;
 @Data
 public class AiChatSession {
 
-    /** 会话 ID（主键） */
-    @TableId(type = IdType.INPUT)
+    /** 自增主键（逻辑主键，会话唯一标识为 tenant_id + session_id 复合键） */
+    @TableId(type = IdType.AUTO)
+    private Long id;
+
+    /** 会话 ID（业务标识，同一 sessionId 在不同租户下相互独立） */
     private String sessionId;
 
     /** 当前活跃任务 ID，NULL 表示无活跃任务 */
@@ -38,8 +41,8 @@ public class AiChatSession {
     /** 当前任务已进行轮次 */
     private Integer turnCount;
 
-    /** 租户 ID */
-    private Long tenantId;
+    /** 租户 ID（支持数字或字符串编码），与 sessionId 共同构成会话隔离维度 */
+    private String tenantId;
 
     /**
      * 对话历史（JSON数组），滑动窗口保留最近N轮对话。

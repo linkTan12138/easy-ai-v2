@@ -19,6 +19,9 @@ import java.util.List;
  * 将每条对话消息独立存储在 ai_chat_message 表中，
  * 采用滑动窗口策略保留最近 N 条消息（默认20条，即10轮 user+assistant）。
  * 超出窗口的旧消息通过逻辑删除标记，不物理删除以便审计追溯。
+ * <p>
+ * 多租户隔离：所有读写均以 (tenant_id, session_id) 复合键隔离，
+ * 同一 sessionId 在不同租户下是相互独立的对话流。
  */
 @Component
 public class DatabaseChatHistoryManager implements ChatHistoryManager {
@@ -37,13 +40,14 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
     }
 
     @Override
-    public List<ChatMessage> loadHistory(String sessionId) {
+    public List<ChatMessage> loadHistory(String sessionId, String tenantId) {
         if (sessionId == null || sessionId.isBlank()) {
             return Collections.emptyList();
         }
+        String tenant = tenantId != null ? tenantId : "0";
         try {
             // 查询最近 N 条消息（SQL 按 create_time DESC，最新的在前面）
-            List<AiChatMessage> recent = messageMapper.selectRecentBySessionId(sessionId, maxMessages);
+            List<AiChatMessage> recent = messageMapper.selectRecentBySessionId(sessionId, tenant, maxMessages);
             if (recent == null || recent.isEmpty()) {
                 return Collections.emptyList();
             }
@@ -54,25 +58,26 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             }
             // 双重保障：按时间戳升序排序，确保历史消息是正序（最旧的在前面，最新的在后面）
             result.sort(Comparator.comparingLong(m -> m.getTimestamp() != null ? m.getTimestamp() : 0L));
-            log.debug("[ChatHistory] loaded {} messages for session={}, first={}, last={}",
-                    result.size(), sessionId,
+            log.debug("[ChatHistory] loaded {} messages for session={}, tenant={}, first={}, last={}",
+                    result.size(), sessionId, tenant,
                     result.isEmpty() ? "none" : result.get(0).getRole(),
                     result.isEmpty() ? "none" : result.get(result.size() - 1).getRole());
             return result;
         } catch (Exception e) {
-            log.warn("[ChatHistory] failed to load history for session={}: {}", sessionId, e.getMessage());
+            log.warn("[ChatHistory] failed to load history for session={}, tenant={}: {}", sessionId, tenant, e.getMessage());
             return Collections.emptyList();
         }
     }
 
     @Override
-    public List<ChatMessage> loadHistoryByTask(String sessionId, String taskId) {
+    public List<ChatMessage> loadHistoryByTask(String sessionId, String taskId, String tenantId) {
         if (sessionId == null || sessionId.isBlank() || taskId == null || taskId.isBlank()) {
             return Collections.emptyList();
         }
+        String tenant = tenantId != null ? tenantId : "0";
         try {
             // 按任务ID查询，只返回该任务的消息（SQL 按 create_time ASC）
-            List<AiChatMessage> taskMessages = messageMapper.selectBySessionIdAndTaskId(sessionId, taskId, maxMessages);
+            List<AiChatMessage> taskMessages = messageMapper.selectBySessionIdAndTaskId(sessionId, taskId, tenant, maxMessages);
             if (taskMessages == null || taskMessages.isEmpty()) {
                 return Collections.emptyList();
             }
@@ -84,38 +89,42 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             result.sort(Comparator.comparingLong(m -> m.getTimestamp() != null ? m.getTimestamp() : 0L));
             return result;
         } catch (Exception e) {
-            log.warn("[ChatHistory] failed to load history for session={}, task={}: {}", sessionId, taskId, e.getMessage());
+            log.warn("[ChatHistory] failed to load history for session={}, task={}, tenant={}: {}",
+                    sessionId, taskId, tenant, e.getMessage());
             return Collections.emptyList();
         }
     }
 
     @Override
+    @Deprecated
     public void appendUserMessage(String sessionId, String content) {
         appendUserMessage(sessionId, content, null, null, null);
     }
 
     @Override
+    @Deprecated
     public void appendAssistantMessage(String sessionId, String content) {
         appendAssistantMessage(sessionId, content, null, null, null);
     }
 
     @Override
-    public void appendUserMessage(String sessionId, String content, String taskId, String taskType, Long tenantId) {
+    public void appendUserMessage(String sessionId, String content, String taskId, String taskType, String tenantId) {
         appendMessage(sessionId, "user", content, taskId, taskType, tenantId);
     }
 
     @Override
-    public void appendAssistantMessage(String sessionId, String content, String taskId, String taskType, Long tenantId) {
+    public void appendAssistantMessage(String sessionId, String content, String taskId, String taskType, String tenantId) {
         appendMessage(sessionId, "assistant", content, taskId, taskType, tenantId);
     }
 
     private void appendMessage(String sessionId, String role, String content,
-                               String taskId, String taskType, Long tenantId) {
+                               String taskId, String taskType, String tenantId) {
         if (sessionId == null || sessionId.isBlank() || content == null) {
             return;
         }
+        String tenant = tenantId != null ? tenantId : "0";
         try {
-            int turnIndex = messageMapper.selectMaxTurnIndex(sessionId) + 1;
+            int turnIndex = messageMapper.selectMaxTurnIndex(sessionId, tenant) + 1;
 
             AiChatMessage message = new AiChatMessage();
             message.setSessionId(sessionId);
@@ -124,15 +133,15 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
             message.setTaskId(taskId);
             message.setTaskType(taskType);
             message.setTurnIndex(turnIndex);
-            message.setTenantId(tenantId);
+            message.setTenantId(tenant);
             message.setDeleted(0);
             messageMapper.insert(message);
 
             // 滑动窗口：超出最大消息数时，逻辑删除最旧的消息
-            long total = messageMapper.countBySessionId(sessionId);
+            long total = messageMapper.countBySessionId(sessionId, tenant);
             if (total > maxMessages) {
                 int excess = (int) (total - maxMessages);
-                List<AiChatMessage> oldMessages = messageMapper.selectRecentBySessionId(sessionId, (int) total);
+                List<AiChatMessage> oldMessages = messageMapper.selectRecentBySessionId(sessionId, tenant, (int) total);
                 // selectRecentBySessionId 是倒序，最旧的在最后
                 for (int i = 0; i < excess && i < oldMessages.size(); i++) {
                     AiChatMessage old = oldMessages.get(oldMessages.size() - 1 - i);
@@ -141,23 +150,23 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
                 }
             }
 
-            log.debug("[ChatHistory] appended {} message to session={}, turn={}, total={}",
-                    role, sessionId, turnIndex, total);
+            log.debug("[ChatHistory] appended {} message to session={}, tenant={}, turn={}, total={}",
+                    role, sessionId, tenant, turnIndex, total);
         } catch (Exception e) {
-            log.warn("[ChatHistory] failed to append message for session={}: {}", sessionId, e.getMessage());
+            log.warn("[ChatHistory] failed to append message for session={}, tenant={}: {}", sessionId, tenant, e.getMessage());
         }
     }
 
     @Override
-    public void clearHistory(String sessionId) {
+    public void clearHistory(String sessionId, String tenantId) {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
         try {
-            messageMapper.softDeleteBySessionId(sessionId);
-            log.debug("[ChatHistory] cleared history for session={}", sessionId);
+            messageMapper.softDeleteBySessionId(sessionId, tenantId != null ? tenantId : "0");
+            log.debug("[ChatHistory] cleared history for session={}, tenant={}", sessionId, tenantId);
         } catch (Exception e) {
-            log.warn("[ChatHistory] failed to clear history for session={}: {}", sessionId, e.getMessage());
+            log.warn("[ChatHistory] failed to clear history for session={}, tenant={}: {}", sessionId, tenantId, e.getMessage());
         }
     }
 
@@ -176,12 +185,12 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
     }
 
     @Override
-    public List<AiChatMessage> listMessages(String sessionId) {
+    public List<AiChatMessage> listMessages(String sessionId, String tenantId) {
         if (sessionId == null || sessionId.isBlank()) {
             return Collections.emptyList();
         }
         try {
-            return messageMapper.selectAllBySessionId(sessionId);
+            return messageMapper.selectAllBySessionId(sessionId, tenantId != null ? tenantId : "0");
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to list messages for session={}: {}", sessionId, e.getMessage());
             return Collections.emptyList();
@@ -189,13 +198,13 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
     }
 
     @Override
-    public List<AiChatMessage> listMessages(String sessionId, int page, int size) {
+    public List<AiChatMessage> listMessages(String sessionId, int page, int size, String tenantId) {
         if (sessionId == null || sessionId.isBlank() || page < 1 || size < 1) {
             return Collections.emptyList();
         }
         try {
             int offset = (page - 1) * size;
-            return messageMapper.selectPageBySessionId(sessionId, offset, size);
+            return messageMapper.selectPageBySessionId(sessionId, tenantId != null ? tenantId : "0", offset, size);
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to list messages (page={},size={}) for session={}: {}",
                     page, size, sessionId, e.getMessage());
@@ -204,12 +213,12 @@ public class DatabaseChatHistoryManager implements ChatHistoryManager {
     }
 
     @Override
-    public long countMessages(String sessionId) {
+    public long countMessages(String sessionId, String tenantId) {
         if (sessionId == null || sessionId.isBlank()) {
             return 0;
         }
         try {
-            return messageMapper.countBySessionId(sessionId);
+            return messageMapper.countBySessionId(sessionId, tenantId != null ? tenantId : "0");
         } catch (Exception e) {
             log.warn("[ChatHistory] failed to count messages for session={}: {}", sessionId, e.getMessage());
             return 0;

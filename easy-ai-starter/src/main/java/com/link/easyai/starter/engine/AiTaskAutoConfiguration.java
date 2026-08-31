@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Auto-configuration for the AI Task Engine.
@@ -23,6 +24,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(AiTaskProperties.class)
 @ConditionalOnProperty(prefix = "easy-ai.task-engine", name = "enabled", havingValue = "true", matchIfMissing = true)
 @ComponentScan("com.link.easyai.starter.engine")
+@EnableScheduling
 public class AiTaskAutoConfiguration {
 
     // Components in com.link.easyai.starter.engine are auto-scanned:

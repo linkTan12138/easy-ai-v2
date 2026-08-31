@@ -33,6 +33,7 @@ public class TbChatSessionTask extends BaseEntity {
     private String intentSource;
     // Optimistic lock version
     private Integer version;
-    private Long tenantId;
+    /** 租户 ID（支持数字或字符串编码） */
+    private String tenantId;
 
 }

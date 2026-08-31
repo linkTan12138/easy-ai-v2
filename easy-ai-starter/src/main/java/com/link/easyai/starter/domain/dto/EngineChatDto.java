@@ -21,6 +21,6 @@ public class EngineChatDto {
     /** User's latest message */
     private String message;
 
-    /** Tenant ID (optional, from security context) */
-    private Long tenantId;
+    /** Tenant ID (optional, from security context; numeric or string) */
+    private String tenantId;
 }

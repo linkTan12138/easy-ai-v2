@@ -1,6 +1,5 @@
 package com.link.easyai.starter.engine.session;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.link.easyai.starter.domain.entity.AiChatSession;
 import com.link.easyai.starter.mapper.AiChatSessionMapper;
 import org.slf4j.Logger;
@@ -13,6 +12,9 @@ import java.time.LocalDateTime;
 
 /**
  * 数据库-backed 的会话状态管理器实现。
+ * <p>
+ * 会话以 (tenant_id, session_id) 复合键唯一标识：
+ * 同一 sessionId 在不同租户下各自独立（多租户多用户隔离）。
  */
 @Component
 public class DefaultSessionManager implements SessionManager {
@@ -27,28 +29,31 @@ public class DefaultSessionManager implements SessionManager {
     }
 
     @Override
-    public AiChatSession loadOrCreate(String sessionId, Long tenantId) {
+    public AiChatSession loadOrCreate(String sessionId, String tenantId) {
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("sessionId cannot be blank");
         }
+        String tenant = tenantId != null && !tenantId.isBlank() ? tenantId : "0";
 
-        AiChatSession session = sessionMapper.selectById(sessionId);
+        // 按复合键定位会话：同一 sessionId 在不同租户下是不同会话
+        AiChatSession session = sessionMapper.selectByTenantAndSession(tenant, sessionId);
         if (session == null) {
             session = new AiChatSession();
             session.setSessionId(sessionId);
             session.setStatus(AiChatSession.STATUS_IDLE);
             session.setTurnCount(0);
-            session.setTenantId(tenantId != null ? tenantId : 0L);
+            session.setTenantId(tenant);
             session.setLastActiveTime(LocalDateTime.now());
             sessionMapper.insert(session);
-            log.debug("[SessionManager] created new session: {}", sessionId);
+            log.debug("[SessionManager] created new session: tenant={}, session={}", tenant, sessionId);
         }
         return session;
     }
 
     @Override
-    public void bindTask(String sessionId, String taskId, String taskType) {
-        int rows = sessionMapper.bindTask(sessionId, taskId, taskType);
+    public void bindTask(String sessionId, String taskId, String taskType, String tenantId) {
+        String tenant = tenantId != null && !tenantId.isBlank() ? tenantId : "0";
+        int rows = sessionMapper.bindTask(sessionId, taskId, taskType, tenant);
         if (rows == 0) {
             // Session doesn't exist yet — create it then bind
             AiChatSession session = new AiChatSession();
@@ -57,22 +62,22 @@ public class DefaultSessionManager implements SessionManager {
             session.setCurrentTaskType(taskType);
             session.setStatus(AiChatSession.STATUS_ACTIVE);
             session.setTurnCount(0);
-            session.setTenantId(0L);
+            session.setTenantId(tenant);
             session.setLastActiveTime(LocalDateTime.now());
             sessionMapper.insert(session);
         }
-        log.info("[SessionManager] session={} bound to task={} ({})", sessionId, taskId, taskType);
+        log.info("[SessionManager] session={} (tenant={}) bound to task={} ({})", sessionId, tenant, taskId, taskType);
     }
 
     @Override
-    public void clearTask(String sessionId) {
-        sessionMapper.clearTask(sessionId);
-        log.debug("[SessionManager] session={} cleared task", sessionId);
+    public void clearTask(String sessionId, String tenantId) {
+        sessionMapper.clearTask(sessionId, tenantId);
+        log.debug("[SessionManager] session={} (tenant={}) cleared task", sessionId, tenantId);
     }
 
     @Override
-    public void touch(String sessionId) {
-        sessionMapper.touch(sessionId);
+    public void touch(String sessionId, String tenantId) {
+        sessionMapper.touch(sessionId, tenantId);
     }
 
     @Override
@@ -88,14 +93,14 @@ public class DefaultSessionManager implements SessionManager {
     }
 
     @Override
-    public void markExpired(String sessionId) {
-        sessionMapper.markExpired(sessionId);
-        log.info("[SessionManager] session={} marked expired", sessionId);
+    public void markExpired(String sessionId, String tenantId) {
+        sessionMapper.markExpired(sessionId, tenantId);
+        log.info("[SessionManager] session={} (tenant={}) marked expired", sessionId, tenantId);
     }
 
     @Override
-    public void reset(String sessionId) {
-        sessionMapper.reset(sessionId);
-        log.info("[SessionManager] session={} reset to IDLE", sessionId);
+    public void reset(String sessionId, String tenantId) {
+        sessionMapper.reset(sessionId, tenantId);
+        log.info("[SessionManager] session={} (tenant={}) reset to IDLE", sessionId, tenantId);
     }
 }

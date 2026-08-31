@@ -3,6 +3,7 @@ package com.link.easyai.starter.engine.state;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.link.easyai.starter.domain.entity.TbChatSessionTask;
+import com.link.easyai.starter.mapper.AiChatMessageMapper;
 import com.link.easyai.starter.mapper.TbChatSessionTaskMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -38,12 +40,15 @@ public class DefaultTaskStateManager implements TaskStateManager {
     private static final int MAX_RETRIES = 3;
 
     private final TbChatSessionTaskMapper taskMapper;
+    private final AiChatMessageMapper messageMapper;
     private final ObjectMapper objectMapper;
 
     @Autowired
     public DefaultTaskStateManager(TbChatSessionTaskMapper taskMapper,
+                                   AiChatMessageMapper messageMapper,
                                    ObjectMapper objectMapper) {
         this.taskMapper = taskMapper;
+        this.messageMapper = messageMapper;
         this.objectMapper = objectMapper;
     }
 
@@ -114,9 +119,9 @@ public class DefaultTaskStateManager implements TaskStateManager {
                 entity.setIntentReason(state.getIntentReason());
                 entity.setIntentConfidence(state.getIntentConfidence());
                 entity.setIntentSource(state.getIntentSource());
-                // tenant_id：优先从 state.context 取，兜底 0（数据库列无默认值，必须显式设置）
-                Long tenantId = state.getFromContext("tenantId");
-                entity.setTenantId(tenantId != null ? tenantId : 0L);
+                // tenant_id：优先从 state.context 取，兜底 "0"（数据库列无默认值，必须显式设置）
+                String tenantId = state.getFromContext("tenantId");
+                entity.setTenantId(tenantId != null && !tenantId.isBlank() ? tenantId : "0");
                 // 审计字段（数据库 NOT NULL，必须显式设置，不依赖自动填充）
                 Date now = new Date();
                 entity.setCreateTime(now);
@@ -282,9 +287,9 @@ public class DefaultTaskStateManager implements TaskStateManager {
     }
 
     @Override
-    public TaskState findLatestActiveTask(Long tenantId) {
-        if (tenantId == null) {
-            tenantId = 0L;
+    public TaskState findLatestActiveTask(String tenantId) {
+        if (tenantId == null || tenantId.isBlank()) {
+            tenantId = "0";
         }
         TbChatSessionTask entity = taskMapper.selectLatestActiveByTenant(tenantId);
         if (entity == null) {
@@ -315,5 +320,105 @@ public class DefaultTaskStateManager implements TaskStateManager {
                     entity.getId(), e.getMessage());
             return null;
         }
+    }
+
+    @Override
+    public TaskState findLatestActiveTaskBySession(String sessionId, String tenantId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return null;
+        }
+        // 通过消息记录反查该会话最近关联的任务（按租户+会话复合维度，避免跨租户串任务）
+        String expectTenant = tenantId != null && !tenantId.isBlank() ? tenantId : "0";
+        String latestTaskId = messageMapper.selectLatestTaskIdBySession(sessionId, expectTenant);
+        if (latestTaskId == null || latestTaskId.isBlank()) {
+            log.debug("[TaskStateManager] no task associated with session={}, tenant={}, skip recovery",
+                    sessionId, expectTenant);
+            return null;
+        }
+
+        // 按业务键加载任务
+        TbChatSessionTask entity = taskMapper.selectByTaskId(latestTaskId);
+        if (entity == null || entity.getDeleted() != null && entity.getDeleted() == 1) {
+            log.debug("[TaskStateManager] session={} latest task={} not found or deleted", sessionId, latestTaskId);
+            return null;
+        }
+
+        // 租户二次校验：任务必须属于当前会话的租户，防止跨租户串任务
+        String taskTenant = entity.getTenantId() != null ? entity.getTenantId() : "0";
+        if (!taskTenant.equals(expectTenant)) {
+            log.warn("[TaskStateManager] session={} latest task={} tenant={} != expected={}, skip recovery",
+                    sessionId, latestTaskId, taskTenant, expectTenant);
+            return null;
+        }
+
+        // 状态校验：仅处理中任务可恢复
+        if (entity.getStatus() == null || entity.getStatus() != 2) {
+            log.debug("[TaskStateManager] session={} latest task={} status={}, not recoverable",
+                    sessionId, latestTaskId, entity.getStatus());
+            return null;
+        }
+
+        // 反序列化完整状态
+        String stateJson = entity.getAiTaskState();
+        if (stateJson == null || stateJson.isBlank()) {
+            log.debug("[TaskStateManager] session={} latest task={} has no state JSON", sessionId, latestTaskId);
+            return null;
+        }
+        try {
+            TaskState state = objectMapper.readValue(stateJson, TaskState.class);
+            if (state.getTaskId() == null || state.getTaskId().isBlank()) {
+                state.setTaskId(entity.getTaskId() != null ? entity.getTaskId() : String.valueOf(entity.getId()));
+            }
+            if (entity.getVersion() != null) {
+                state.setVersion(entity.getVersion());
+            }
+            log.info("[TaskStateManager] found latest active task by session={}: taskId={}, taskType={}, status={}",
+                    sessionId, state.getTaskId(), state.getTaskType(), state.getStatus());
+            return state;
+        } catch (Exception e) {
+            log.warn("[TaskStateManager] failed to deserialize session={} latest task state id={}: {}",
+                    sessionId, entity.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    public int markExpiredTasks(int timeoutMinutes) {
+        if (timeoutMinutes <= 0) {
+            timeoutMinutes = 30;
+        }
+        List<TbChatSessionTask> expiredTasks = taskMapper.selectExpiredActiveTasks(timeoutMinutes);
+        if (expiredTasks == null || expiredTasks.isEmpty()) {
+            return 0;
+        }
+
+        int marked = 0;
+        for (TbChatSessionTask entity : expiredTasks) {
+            try {
+                // 加载状态并标记为 EXPIRED（save 会走乐观锁 + 更新 status 列与 state JSON）
+                TaskState state = load(entity.getTaskId(), entity.getTaskType(), entity.getConfigVersion());
+                if (state == null || state.getTaskId() == null) {
+                    continue;
+                }
+                // 二次确认：仅处理仍是处理中的任务，避免并发下把刚恢复的任务误标过期
+                TaskStatus currentStatus = state.getStatus();
+                if (currentStatus != TaskStatus.COLLECTING
+                        && currentStatus != TaskStatus.READY
+                        && currentStatus != TaskStatus.EXECUTING
+                        && currentStatus != TaskStatus.INITIALIZED) {
+                    continue;
+                }
+                state.setStatus(TaskStatus.EXPIRED);
+                save(state);
+                marked++;
+                log.info("[TaskStateManager] marked task={} ({}), taskType={} as EXPIRED, idle since update_time={}",
+                        entity.getTaskId(), entity.getId(), entity.getTaskType(), entity.getUpdateTime());
+            } catch (Exception e) {
+                log.warn("[TaskStateManager] failed to expire task={}: {}", entity.getTaskId(), e.getMessage());
+            }
+        }
+        log.info("[TaskStateManager] markExpiredTasks finished: {} task(s) expired, {} processed",
+                marked, expiredTasks.size());
+        return marked;
     }
 }

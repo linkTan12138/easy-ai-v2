@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 @Mapper
 public interface TbChatSessionTaskMapper extends BaseMapper<TbChatSessionTask> {
 
@@ -25,11 +27,20 @@ public interface TbChatSessionTaskMapper extends BaseMapper<TbChatSessionTask> {
      */
     @Select("SELECT * FROM ai_chat_session_task WHERE tenant_id = #{tenantId} AND status = 2 AND deleted = 0 " +
             "ORDER BY update_time DESC LIMIT 1")
-    TbChatSessionTask selectLatestActiveByTenant(@Param("tenantId") Long tenantId);
+    TbChatSessionTask selectLatestActiveByTenant(@Param("tenantId") String tenantId);
 
     /**
      * 按业务 task_id 查询任务记录（唯一索引）。
      */
     @Select("SELECT * FROM ai_chat_session_task WHERE task_id = #{taskId} AND deleted = 0 LIMIT 1")
     TbChatSessionTask selectByTaskId(@Param("taskId") String taskId);
+
+    /**
+     * 查询所有已超过指定分钟数未更新的处理中任务（status=2，deleted=0）。
+     * 用于后台定时任务主动将超时任务标记为 EXPIRED。
+     */
+    @Select("SELECT * FROM ai_chat_session_task WHERE status = 2 AND deleted = 0 " +
+            "AND update_time < DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE) " +
+            "ORDER BY update_time ASC")
+    List<TbChatSessionTask> selectExpiredActiveTasks(@Param("timeoutMinutes") int timeoutMinutes);
 }

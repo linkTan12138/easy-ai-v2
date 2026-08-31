@@ -39,8 +39,8 @@ public class AiChatMessage {
     /** 轮次索引，同一 session 内递增 */
     private Integer turnIndex;
 
-    /** 租户 ID */
-    private Long tenantId;
+    /** 租户 ID（支持数字或字符串编码） */
+    private String tenantId;
 
     private LocalDateTime createTime;
 

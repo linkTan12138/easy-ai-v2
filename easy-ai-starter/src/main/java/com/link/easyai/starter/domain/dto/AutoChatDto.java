@@ -24,6 +24,6 @@ public class AutoChatDto {
     /** 用户最新消息 */
     private String message;
 
-    /** 租户 ID（可选，来自安全上下文） */
-    private Long tenantId;
+    /** 租户 ID（可选，来自安全上下文；支持数字或字符串编码） */
+    private String tenantId;
 }

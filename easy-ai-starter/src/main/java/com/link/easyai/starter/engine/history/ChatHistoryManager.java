@@ -16,6 +16,9 @@ import java.util.List;
  * </ul>
  * 滑动窗口策略：保留最近 N 轮对话（user+assistant 为一轮），
  * 超出窗口的旧消息自动丢弃，控制 token 用量。
+ * <p>
+ * 多租户隔离：消息以 (tenant_id, session_id) 复合键隔离，
+ * 同一 sessionId 在不同租户下是相互独立的对话流。
  */
 public interface ChatHistoryManager {
 
@@ -23,9 +26,10 @@ public interface ChatHistoryManager {
      * 加载会话的对话历史（用于 LLM 上下文，按时间升序）。
      *
      * @param sessionId 会话ID
+     * @param tenantId  租户ID
      * @return 对话消息列表（按时间升序），无历史返回空列表
      */
-    List<ChatMessage> loadHistory(String sessionId);
+    List<ChatMessage> loadHistory(String sessionId, String tenantId);
 
     /**
      * 加载指定任务的对话历史（按时间升序）。
@@ -35,16 +39,19 @@ public interface ChatHistoryManager {
      *
      * @param sessionId 会话ID
      * @param taskId    任务ID
+     * @param tenantId  租户ID
      * @return 该任务的对话消息列表（按时间升序），无历史返回空列表
      */
-    List<ChatMessage> loadHistoryByTask(String sessionId, String taskId);
+    List<ChatMessage> loadHistoryByTask(String sessionId, String taskId, String tenantId);
 
     /**
      * 追加一条用户消息到历史。
      *
      * @param sessionId 会话ID
      * @param content   用户消息内容
+     * @deprecated 请使用带 tenantId 的重载方法，保证多租户隔离
      */
+    @Deprecated
     void appendUserMessage(String sessionId, String content);
 
     /**
@@ -52,7 +59,9 @@ public interface ChatHistoryManager {
      *
      * @param sessionId 会话ID
      * @param content   AI回复内容
+     * @deprecated 请使用带 tenantId 的重载方法，保证多租户隔离
      */
+    @Deprecated
     void appendAssistantMessage(String sessionId, String content);
 
     /**
@@ -62,9 +71,9 @@ public interface ChatHistoryManager {
      * @param content   用户消息内容
      * @param taskId    关联的任务ID（可选）
      * @param taskType  任务类型（可选）
-     * @param tenantId  租户ID（可选）
+     * @param tenantId  租户ID（支持数字或字符串编码）
      */
-    void appendUserMessage(String sessionId, String content, String taskId, String taskType, Long tenantId);
+    void appendUserMessage(String sessionId, String content, String taskId, String taskType, String tenantId);
 
     /**
      * 追加一条AI回复到历史（带任务关联信息）。
@@ -73,16 +82,17 @@ public interface ChatHistoryManager {
      * @param content   AI回复内容
      * @param taskId    关联的任务ID（可选）
      * @param taskType  任务类型（可选）
-     * @param tenantId  租户ID（可选）
+     * @param tenantId  租户ID（支持数字或字符串编码）
      */
-    void appendAssistantMessage(String sessionId, String content, String taskId, String taskType, Long tenantId);
+    void appendAssistantMessage(String sessionId, String content, String taskId, String taskType, String tenantId);
 
     /**
      * 清空会话的对话历史（任务完成/取消/会话重置时调用）。
      *
      * @param sessionId 会话ID
+     * @param tenantId  租户ID
      */
-    void clearHistory(String sessionId);
+    void clearHistory(String sessionId, String tenantId);
 
     /**
      * 将对话历史格式化为 prompt 文本片段。
@@ -103,9 +113,10 @@ public interface ChatHistoryManager {
      * 查询会话的所有历史消息（按时间升序，用于前端展示）。
      *
      * @param sessionId 会话ID
+     * @param tenantId  租户ID
      * @return 消息列表
      */
-    List<AiChatMessage> listMessages(String sessionId);
+    List<AiChatMessage> listMessages(String sessionId, String tenantId);
 
     /**
      * 分页查询会话的历史消息。
@@ -113,15 +124,17 @@ public interface ChatHistoryManager {
      * @param sessionId 会话ID
      * @param page      页码（从1开始）
      * @param size      每页条数
+     * @param tenantId  租户ID
      * @return 消息列表
      */
-    List<AiChatMessage> listMessages(String sessionId, int page, int size);
+    List<AiChatMessage> listMessages(String sessionId, int page, int size, String tenantId);
 
     /**
      * 统计会话的消息总数。
      *
      * @param sessionId 会话ID
+     * @param tenantId  租户ID
      * @return 消息总数
      */
-    long countMessages(String sessionId);
+    long countMessages(String sessionId, String tenantId);
 }

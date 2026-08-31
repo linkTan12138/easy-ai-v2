@@ -107,6 +107,17 @@ public class AiTaskProperties {
 
         /** Whether to enable recovery guidance when resuming an incomplete task. */
         private boolean recoveryGuidanceEnabled = true;
+
+        /**
+         * 是否启用后台定时任务，主动将超过 timeout-minutes 未更新的处理中任务标记为 EXPIRED。
+         * 默认启用。禁用后任务过期只能依赖会话层面的懒清理（用户下次访问时触发）。
+         */
+        private boolean expireEnabled = true;
+
+        /**
+         * 定时过期检查的固定延迟（毫秒）。默认 600000（10 分钟）。
+         */
+        private long expireIntervalMs = 600000L;
     }
 
     @Data

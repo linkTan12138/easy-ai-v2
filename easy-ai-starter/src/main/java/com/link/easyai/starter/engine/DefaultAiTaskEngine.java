@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -101,8 +102,7 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         log.info("[AiTaskEngine] execute start: taskType={}, taskId={}", taskType, taskId);
 
         // MDC context for structured logging
-        String tenantId = taskContext != null && taskContext.getTenantId() != null
-                ? String.valueOf(taskContext.getTenantId()) : null;
+        String tenantId = taskContext != null ? taskContext.getTenantId() : null;
         try (EngineMdcUtils.MdcScope mdc = EngineMdcUtils.withTaskContext(taskId, taskType, tenantId)) {
 
             // The whole pipeline is wrapped so a failing sub-engine never crashes
@@ -156,6 +156,17 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
                 state.setIntentReason(taskContext.getIntentReason());
                 state.setIntentConfidence(taskContext.getIntentConfidence());
                 state.setIntentSource(taskContext.getIntentSource());
+                // 同步租户上下文到 TaskState，保证 task 记录的 tenant_id 正确持久化
+                // （DefaultTaskStateManager.save 从 state.context 读取 tenantId）
+                if (state.getContext() == null) {
+                    state.setContext(new LinkedHashMap<>());
+                }
+                if (taskContext.getTenantId() != null) {
+                    state.getContext().put("tenantId", taskContext.getTenantId());
+                }
+                if (taskContext.getData() != null) {
+                    state.getContext().putAll(taskContext.getData());
+                }
             }
         }
         log.debug("[AiTaskEngine] state loaded: status={}, fields={}", state.getStatus(), state.getFields().size());
@@ -195,9 +206,14 @@ public class DefaultAiTaskEngine implements AiTaskEngine {
         // 注意：不使用 session 级别的完整历史，避免上一个任务的历史污染当前任务的字段抽取
         String sessionId = taskContext != null ? taskContext.getSessionId() : null;
         String taskIdForHistory = taskContext != null ? taskContext.getTaskId() : null;
+        // 租户隔离：历史加载以 (tenant_id, session_id) 复合维度过滤，避免跨租户串历史
+        String historyTenant = taskContext != null && taskContext.getTenantId() != null
+                && !taskContext.getTenantId().isBlank()
+                ? taskContext.getTenantId()
+                : state.getFromContext("tenantId");
         List<ChatMessage> chatHistory;
         if (sessionId != null && !sessionId.isBlank() && taskIdForHistory != null && !taskIdForHistory.isBlank()) {
-            chatHistory = chatHistoryManager.loadHistoryByTask(sessionId, taskIdForHistory);
+            chatHistory = chatHistoryManager.loadHistoryByTask(sessionId, taskIdForHistory, historyTenant);
         } else {
             chatHistory = java.util.Collections.emptyList();
         }

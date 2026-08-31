@@ -29,8 +29,8 @@ public class TaskContext {
     /** Config version */
     private Integer configVersion;
 
-    /** Tenant ID */
-    private Long tenantId;
+    /** Tenant ID（支持数字或字符串编码） */
+    private String tenantId;
 
     /** User details (from security context or session) */
     private Object userDetails;

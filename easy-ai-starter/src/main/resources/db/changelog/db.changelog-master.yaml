@@ -433,3 +433,56 @@ databaseChangeLog:
                   type: VARCHAR(32)
                   remarks: 匹配来源：LLM / KEYWORD / FALLBACK / CONTINUE
                   afterColumn: intent_confidence
+  - changeSet:
+      id: 0012-tenant-id-to-varchar
+      author: easy-ai
+      comment: 将三张表的 tenant_id 从 BIGINT 改为 VARCHAR(64)，支持数字或字符串编码的租户 ID（多租户多用户场景）
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          dbms:
+            type: h2
+      changes:
+        - modifyDataType:
+            tableName: ai_chat_session_task
+            columnName: tenant_id
+            newDataType: VARCHAR(64)
+        - modifyDataType:
+            tableName: ai_chat_session
+            columnName: tenant_id
+            newDataType: VARCHAR(64)
+        - modifyDataType:
+            tableName: ai_chat_message
+            columnName: tenant_id
+            newDataType: VARCHAR(64)
+  - changeSet:
+      id: 0013-session-composite-key
+      author: easy-ai
+      comment: 会话表改为自增 id 主键 + (tenant_id, session_id) 唯一约束，支持同一 sessionId 在不同租户下各自独立（多租户多用户隔离）
+      preconditions:
+        onFail: MARK_RAN
+        not:
+          columnExists:
+            tableName: ai_chat_session
+            columnName: id
+      changes:
+        # MySQL 不允许在已有主键的表上直接添加自增主键列：
+        # 1) 先移除 session_id 旧主键（不删数据，仅去约束）
+        # 2) 再添加 id 自增主键列
+        - sql:
+            dbms: mysql
+            sql: >-
+              ALTER TABLE ai_chat_session DROP PRIMARY KEY;
+              ALTER TABLE ai_chat_session ADD COLUMN id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST;
+        - addUniqueConstraint:
+            tableName: ai_chat_session
+            columnNames: tenant_id, session_id
+            constraintName: uk_tenant_session
+        - createIndex:
+            tableName: ai_chat_message
+            indexName: idx_tenant_session
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: session_id

@@ -54,8 +54,36 @@ public interface TaskStateManager {
      * 反序列化 ai_task_state JSON 返回完整的 TaskState；如果没有未完成任务或
      * 反序列化失败，返回 null。
      *
-     * @param tenantId 租户 ID
+     * @param tenantId 租户 ID（支持数字或字符串编码）
      * @return 最近未完成任务的状态，或 null
      */
-    TaskState findLatestActiveTask(Long tenantId);
+    TaskState findLatestActiveTask(String tenantId);
+
+    /**
+     * 按会话查找最近一个未完成的任务（状态=处理中），用于多租户多用户场景下的连续性恢复。
+     * <p>
+     * 与 {@link #findLatestActiveTask(Long)} 按租户维度查找不同，本方法通过
+     * 会话的消息记录反查该会话最近关联的任务，再校验其仍处于处理中状态，
+     * 从而保证「谁的会话，就恢复谁的任务」，避免同租户下不同用户串任务。
+     *
+     * @param sessionId 会话 ID
+     * @param tenantId  期望的租户 ID（用于二次校验，可为 null）
+     * @return 该会话最近未完成任务的状态，或 null
+     */
+    default TaskState findLatestActiveTaskBySession(String sessionId, String tenantId) {
+        return null;
+    }
+
+    /**
+     * 将超过指定分钟数未更新的处理中任务标记为 EXPIRED。
+     * <p>
+     * 供后台定时任务调用，主动清理长期未活跃的任务，避免其被
+     * {@link #findLatestActiveTask} 在很久之后错误恢复。
+     *
+     * @param timeoutMinutes 超时阈值（分钟），update_time 距当前时间超过该值则视为超时
+     * @return 被标记为 EXPIRED 的任务数量
+     */
+    default int markExpiredTasks(int timeoutMinutes) {
+        return 0;
+    }
 }

@@ -79,12 +79,15 @@ public class DefaultAiChatService implements AiChatService {
         // 1. 输入安全检查
         String safeMessage = sanitizeInput(message);
 
-        // 2. 分布式锁：防止同一 sessionId 并发请求导致状态错乱
+        // 2. 分布式锁：防止同一 (tenantId, sessionId) 并发请求导致状态错乱
         //    锁过期时间60秒（LLM调用通常2-10秒，留足余量）
-        String lockKey = "easyai:session:" + sessionId;
+        String lockTenant = context != null && context.getTenantId() != null && !context.getTenantId().isBlank()
+                ? context.getTenantId() : "0";
+        String lockKey = "easyai:session:" + lockTenant + ":" + sessionId;
         String lockToken = lockManager.tryLock(lockKey, 60);
         if (lockToken == null) {
-            log.warn("[AiChatService] session={} is locked by another request, rejecting", sessionId);
+            log.warn("[AiChatService] session={} tenant={} is locked by another request, rejecting",
+                    sessionId, lockTenant);
             return ChatResponse.fallback("请求过于频繁，请稍后再试");
         }
 
@@ -96,9 +99,12 @@ public class DefaultAiChatService implements AiChatService {
     }
 
     private ChatResponse doChat(String safeMessage, String sessionId, TaskContext context) {
-        // 3. 加载/创建会话
-        Long tenantId = context != null && context.getTenantId() != null ? context.getTenantId() : 0L;
+        // 3. 加载/创建会话（(tenant_id, session_id) 复合键定位）
+        String tenantId = context != null && context.getTenantId() != null && !context.getTenantId().isBlank()
+                ? context.getTenantId() : "0";
         AiChatSession session = sessionManager.loadOrCreate(sessionId, tenantId);
+        // 以 session 记录的租户为权威（同一 sessionId 在不同租户下是独立会话）
+        String sessionTenant = session.getTenantId() != null ? session.getTenantId() : tenantId;
 
         // 3. 会话超时检查：超时后自动重置并把当前消息作为新会话的第一条消息处理
         int timeoutMinutes = properties.getLifecycle() != null
@@ -110,12 +116,12 @@ public class DefaultAiChatService implements AiChatService {
                 cancelTask(session.getCurrentTaskId());
             }
             // 重置会话为 IDLE，复用当前 sessionId，避免用户必须换 ID 才能继续
-            sessionManager.reset(sessionId);
+            sessionManager.reset(sessionId, sessionTenant);
             // 超时重置时清空对话历史，开启全新会话
-            chatHistoryManager.clearHistory(sessionId);
+            chatHistoryManager.clearHistory(sessionId, sessionTenant);
             sessionReset = true;
-            log.info("[AiChatService] session={} expired ({}min idle), reset and continuing as new session",
-                    sessionId, timeoutMinutes);
+            log.info("[AiChatService] session={} tenant={} expired ({}min idle), reset and continuing as new session",
+                    sessionId, sessionTenant, timeoutMinutes);
             // 同步清理内存对象，避免后续 hasActiveTask 判断误用旧值
             session.setCurrentTaskId(null);
             session.setCurrentTaskType(null);
@@ -135,7 +141,7 @@ public class DefaultAiChatService implements AiChatService {
             if (recoveredTask != null) {
                 // 恢复成功：重新绑定 session 到该任务，继续执行
                 sessionManager.bindTask(session.getSessionId(), recoveredTask.getTaskId(),
-                        recoveredTask.getTaskType());
+                        recoveredTask.getTaskType(), sessionTenant);
                 response = executeExistingTask(safeMessage, session, recoveredTask.getTaskId(),
                         recoveredTask.getTaskType(), context);
             } else {
@@ -149,8 +155,8 @@ public class DefaultAiChatService implements AiChatService {
         try {
             String taskId = response.getTaskId() != null ? response.getTaskId() : session.getCurrentTaskId();
             String taskType = response.getTaskType() != null ? response.getTaskType() : session.getCurrentTaskType();
-            chatHistoryManager.appendUserMessage(sessionId, safeMessage, taskId, taskType, tenantId);
-            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage(), taskId, taskType, tenantId);
+            chatHistoryManager.appendUserMessage(sessionId, safeMessage, taskId, taskType, sessionTenant);
+            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage(), taskId, taskType, sessionTenant);
         } catch (Exception e) {
             log.warn("[AiChatService] failed to record chat history for session={}: {}", sessionId, e.getMessage());
         }
@@ -166,11 +172,14 @@ public class DefaultAiChatService implements AiChatService {
 
         String safeMessage = sanitizeInput(message);
 
-        // 分布式锁：防止同一 sessionId 并发请求
-        String lockKey = "easyai:session:" + sessionId;
+        // 分布式锁：防止同一 (tenantId, sessionId) 并发请求
+        String lockTenant = context != null && context.getTenantId() != null && !context.getTenantId().isBlank()
+                ? context.getTenantId() : "0";
+        String lockKey = "easyai:session:" + lockTenant + ":" + sessionId;
         String lockToken = lockManager.tryLock(lockKey, 60);
         if (lockToken == null) {
-            log.warn("[AiChatService] chatWithTaskType session={} is locked, rejecting", sessionId);
+            log.warn("[AiChatService] chatWithTaskType session={} tenant={} is locked, rejecting",
+                    sessionId, lockTenant);
             return ChatResponse.fallback("请求过于频繁，请稍后再试");
         }
 
@@ -182,8 +191,10 @@ public class DefaultAiChatService implements AiChatService {
     }
 
     private ChatResponse doChatWithTaskType(String safeMessage, String sessionId, String taskType, TaskContext context) {
-        Long tenantId = context != null && context.getTenantId() != null ? context.getTenantId() : 0L;
+        String tenantId = context != null && context.getTenantId() != null && !context.getTenantId().isBlank()
+                ? context.getTenantId() : "0";
         AiChatSession session = sessionManager.loadOrCreate(sessionId, tenantId);
+        String sessionTenant = session.getTenantId() != null ? session.getTenantId() : tenantId;
 
         // 会话超时检查：与 chat() 保持一致，超时后自动重置再创建新任务
         int timeoutMinutes = properties.getLifecycle() != null
@@ -193,10 +204,11 @@ public class DefaultAiChatService implements AiChatService {
             if (session.getCurrentTaskId() != null && !session.getCurrentTaskId().isBlank()) {
                 cancelTask(session.getCurrentTaskId());
             }
-            sessionManager.reset(sessionId);
-            chatHistoryManager.clearHistory(sessionId);
+            sessionManager.reset(sessionId, sessionTenant);
+            chatHistoryManager.clearHistory(sessionId, sessionTenant);
             sessionReset = true;
-            log.info("[AiChatService] chatWithTaskType session={} expired, reset and continuing", sessionId);
+            log.info("[AiChatService] chatWithTaskType session={} tenant={} expired, reset and continuing",
+                    sessionId, sessionTenant);
             session.setCurrentTaskId(null);
             session.setCurrentTaskType(null);
             session.setStatus(AiChatSession.STATUS_IDLE);
@@ -209,8 +221,8 @@ public class DefaultAiChatService implements AiChatService {
         try {
             String taskId = response.getTaskId() != null ? response.getTaskId() : session.getCurrentTaskId();
             String respTaskType = response.getTaskType() != null ? response.getTaskType() : taskType;
-            chatHistoryManager.appendUserMessage(sessionId, safeMessage, taskId, respTaskType, tenantId);
-            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage(), taskId, respTaskType, tenantId);
+            chatHistoryManager.appendUserMessage(sessionId, safeMessage, taskId, respTaskType, sessionTenant);
+            chatHistoryManager.appendAssistantMessage(sessionId, response.getMessage(), taskId, respTaskType, sessionTenant);
         } catch (Exception e) {
             log.warn("[AiChatService] failed to record chat history (chatWithTaskType) session={}: {}", sessionId, e.getMessage());
         }
@@ -224,6 +236,7 @@ public class DefaultAiChatService implements AiChatService {
         String currentTaskId = session.getCurrentTaskId();
         String currentTaskType = session.getCurrentTaskType();
         String sessionId = session.getSessionId();
+        String tenantId = session.getTenantId() != null ? session.getTenantId() : "0";
 
         // 构建已收集字段的简要描述（用于 LLM 上下文判断）
         String collectedFields = buildCollectedFieldsSummary(currentTaskId);
@@ -245,7 +258,7 @@ public class DefaultAiChatService implements AiChatService {
         String lastAiReply = null;
         String recentHistory = null;
         try {
-            List<ChatMessage> history = chatHistoryManager.loadHistory(sessionId);
+            List<ChatMessage> history = chatHistoryManager.loadHistory(sessionId, tenantId);
             if (history != null && !history.isEmpty()) {
                 // 取最近 6 条消息（3 轮对话）作为上下文
                 int fromIndex = Math.max(0, history.size() - 6);
@@ -272,8 +285,8 @@ public class DefaultAiChatService implements AiChatService {
         if (result.isCancel()) {
             // 取消当前任务
             cancelTask(currentTaskId);
-            sessionManager.clearTask(sessionId);
-            log.info("[AiChatService] session={} cancelled task={}", sessionId, currentTaskId);
+            sessionManager.clearTask(sessionId, tenantId);
+            log.info("[AiChatService] session={} tenant={} cancelled task={}", sessionId, tenantId, currentTaskId);
             return ChatResponse.fallback("好的，已取消当前任务。有什么可以帮您的？")
                     .withIntent(result.getReason(), result.getConfidence(), sourceName(result));
         }
@@ -339,8 +352,9 @@ public class DefaultAiChatService implements AiChatService {
         // 注意：AiTaskEngine.execute 内部会处理任务状态的创建/加载
         String taskId = generateTaskId(session.getSessionId(), taskType);
 
-        // 绑定任务到会话
-        sessionManager.bindTask(session.getSessionId(), taskId, taskType);
+        // 绑定任务到会话（按租户+会话复合键）
+        sessionManager.bindTask(session.getSessionId(), taskId, taskType,
+                session.getTenantId() != null ? session.getTenantId() : "0");
 
         // 将意图识别信息放入 TaskContext，供引擎在任务创建时持久化
         if (intentResult != null) {
@@ -361,7 +375,8 @@ public class DefaultAiChatService implements AiChatService {
     private ChatResponse executeExistingTask(String message, AiChatSession session,
                                                String taskId, String taskType, TaskContext context) {
         // 更新会话活跃时间
-        sessionManager.touch(session.getSessionId());
+        sessionManager.touch(session.getSessionId(),
+                session.getTenantId() != null ? session.getTenantId() : "0");
 
         // 构建 TaskContext
         TaskContext taskContext = context != null ? context : TaskContext.builder()
@@ -386,7 +401,8 @@ public class DefaultAiChatService implements AiChatService {
 
         // 任务完成时清除会话绑定
         if (engineResponse.isCompleted()) {
-            sessionManager.clearTask(session.getSessionId());
+            sessionManager.clearTask(session.getSessionId(),
+                    session.getTenantId() != null ? session.getTenantId() : "0");
             log.info("[AiChatService] session={} task={} completed, session cleared",
                     session.getSessionId(), taskId);
         }
@@ -473,8 +489,10 @@ public class DefaultAiChatService implements AiChatService {
      * @return 可恢复的任务状态，或 null
      */
     private TaskState tryRecoverLastTask(String message, AiChatSession session) {
-        Long tenantId = session.getTenantId() != null ? session.getTenantId() : 0L;
-        TaskState lastTask = taskStateManager.findLatestActiveTask(tenantId);
+        String tenantId = session.getTenantId() != null ? session.getTenantId() : "0";
+        // 多租户多用户场景：按会话找回该用户最近未完成的任务，
+        // 避免按租户维度查找导致同一租户下不同用户串任务
+        TaskState lastTask = taskStateManager.findLatestActiveTaskBySession(session.getSessionId(), tenantId);
         if (lastTask == null) {
             return null;
         }
